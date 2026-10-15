@@ -228,3 +228,116 @@ docker compose -f docker-compose.yml restart dev-mysql
 ```
 
 修改 Compose 配置后，应重新执行对应服务的 `up -d`。单纯执行 `restart` 不会应用新增的环境变量等配置变更。[Docker 重启命令说明](https://docs.docker.com/reference/cli/docker/compose/restart/)
+
+## 2. 环境配置改动说明
+
+### 2.1 调整背景与检查结果
+
+本项目运行于 VMware 中的 Ubuntu 24.04 Server ARM64 虚拟机。原开发环境使用 AMD64 镜像，部分中间件在模拟运行时出现过异常退出和转储问题，因此采用混合架构方案：中间件尽量使用原生 ARM64 镜像，开发工具链与 FastDFS 保留原镜像。
+
+### 2.2 镜像与架构调整
+
+在原有 `docker-compose.yml` 中，仅修改以下六个服务的 `image` 和 `platform`，保留对应的软件版本。
+
+| Compose 服务          | 原镜像简称                | 当前镜像                                                  | 当前平台        |
+| --------------------- | ------------------------- | --------------------------------------------------------- | --------------- |
+| `dev-mysql`         | `mysql-dev:1.0`         | `mysql:8.0.40`                                          | `linux/arm64` |
+| `dev-redis`         | `redis-dev:1.0`         | `redis:7.4.1`                                           | `linux/arm64` |
+| `dev-rabbitmq`      | `rabbitmq-dev:1.0`      | `rabbitmq:4.0.3-management`                             | `linux/arm64` |
+| `dev-etcd`          | `etcd-dev:1.0`          | `gcr.io/etcd-development/etcd:v3.5.12`                  | `linux/arm64` |
+| `dev-elasticsearch` | `elasticsearch-dev:1.0` | `docker.elastic.co/elasticsearch/elasticsearch:7.17.18` | `linux/arm64` |
+| `dev-kibana`        | `kibana-dev:1.0`        | `docker.elastic.co/kibana/kibana:7.17.18`               | `linux/arm64` |
+
+原镜像均来自阿里云镜像仓库。
+
+以下三个容器继续使用原 AMD64 镜像，通过 QEMU/binfmt 模拟支持运行：
+
+- `dev-env-service`：保留原开发工具链、预装依赖和开发环境。
+- `fdfs-tracker-service`：保留原 FastDFS tracker。
+- `fdfs-storage-service`：保留原 FastDFS storage。
+
+两个 FastDFS 容器共用同一个 `fastdfs-dev:1.0` 镜像。因此，当前九个容器使用八种运行镜像；`tonistiigi/binfmt` 是注册模拟支持的辅助镜像，不作为常驻业务容器运行。
+
+### 2.3 当前容器结构与端口关系
+
+所有容器仍连接到同一个 Docker bridge 网络：
+
+```text
+网络名称：dev-environment_dev-network
+网络网段：172.18.0.0/16
+网络网关：172.18.0.1
+```
+
+| Compose 服务 / 容器名称                           | 用途                                | 架构           | Ubuntu 宿主机端口 → 容器端口                |
+| ------------------------------------------------- | ----------------------------------- | -------------- | -------------------------------------------- |
+| `dev-environment` / `dev-env-service`         | C++ 源码开发、编译、调试及 SSH 登录 | AMD64 模拟运行 | `2222 → 22`；`9000–9009 → 9000–9009` |
+| `dev-mysql` / `mysql-service`                 | 关系型数据存储                      | ARM64          | `3308 → 3306`                             |
+| `dev-redis` / `redis-service`                 | 缓存及临时状态存储                  | ARM64          | `6380 → 6379`                             |
+| `dev-rabbitmq` / `rabbitmq-service`           | 消息队列及管理界面                  | ARM64          | `5672 → 5672`；`15672 → 15672`         |
+| `dev-etcd` / `etcd-service`                   | 服务注册、发现及配置存储            | ARM64          | `2379 → 2379`；`2380 → 2380`           |
+| `dev-elasticsearch` / `elasticsearch-service` | 检索、索引及 IK 中文分词            | ARM64          | `9200 → 9200`；`9300 → 9300`           |
+| `dev-kibana` / `kibana-service`               | Elasticsearch 可视化管理            | ARM64          | `5601 → 5601`                             |
+| `dev-tracker` / `fdfs-tracker-service`        | FastDFS 存储节点管理与调度          | AMD64 模拟运行 | `22122 → 22122`                           |
+| `dev-storage` / `fdfs-storage-service`        | FastDFS 文件存储                    | AMD64 模拟运行 | `23000 → 23000`                           |
+
+容器之间通过 **Compose 服务名和容器端口**访问，例如：
+
+```text
+MySQL：dev-mysql:3306
+Redis：dev-redis:6379
+RabbitMQ：dev-rabbitmq:5672
+etcd：dev-etcd:2379
+Elasticsearch：http://dev-elasticsearch:9200
+FastDFS tracker：dev-tracker:22122
+```
+
+从 Mac 或 Ubuntu 宿主机访问 MySQL、Redis 时，使用发布端口 `3308`、`6380`。
+
+原依赖关系保持不变：Kibana 依赖 Elasticsearch 健康检查通过；FastDFS storage 依赖 tracker 启动。
+
+### 2.4 配置保留与数据迁移
+
+环境目录仍为：
+
+```text
+/home/drw/workspace/bite-dev-environment
+```
+
+继续使用原有 `docker-compose.yml`，没有新增第二份 Compose 配置。除六个服务的镜像及平台字段外，服务名、容器名、端口、环境变量、密码、挂载、权限、重启策略、健康检查及依赖关系均沿用原配置。
+
+开发代码挂载保持为：
+
+```text
+宿主机：
+/home/drw/workspace/bite-dev-environment/dev-environment/workspace
+
+开发容器：
+/home/dev/workspace
+```
+
+数据处理方式如下：
+
+| 组件              | 本次处理方式                                                           |
+| ----------------- | ---------------------------------------------------------------------- |
+| MySQL             | 沿用原 `/var/lib/mysql` 匿名数据卷及配置挂载                         |
+| Redis             | 沿用原 `/data` 匿名数据卷及 `redis.conf`                           |
+| RabbitMQ          | 沿用原数据卷，并导出、导入用户、权限等定义；迁移时已确认没有队列和消息 |
+| etcd              | 停止旧容器后，将原数据转移至新容器的 `/var/lib/etcd`                 |
+| Elasticsearch     | 停止旧容器后，将原数据转移至新容器的数据目录，保留配置和 IK 插件挂载   |
+| 开发容器、FastDFS | 保留原容器，未进行替换                                                 |
+
+### 2.5 使用方式
+
+进入开发容器：
+
+```bash
+docker exec -it --user dev dev-env-service bash
+cd /home/dev/workspace/chat2data-cpp
+```
+
+在 Ubuntu 宿主机查看环境状态：
+
+```bash
+cd /home/drw/workspace/bite-dev-environment
+docker compose ps -a
+```
