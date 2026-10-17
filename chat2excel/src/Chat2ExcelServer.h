@@ -8,14 +8,16 @@
 #include <thread>
 #include <unordered_map>
 
-namespace httplib {
-class Server;
-struct Request;
-struct Response;
+namespace httplib
+{
+    class Server;
+    struct Request;
+    struct Response;
 }
 
-namespace ai_chat_sdk {
-class ChatSDK;
+namespace ai_chat_sdk
+{
+    class ChatSDK;
 }
 
 /**
@@ -26,7 +28,8 @@ class ChatSDK;
  * start()/stop() 的生命周期操作通过互斥量串行执行，应由控制线程调用，不应在 HTTP 请求处理函数内部调用 stop()。
  * 日志使用 bite_scaffold；调用方应在创建服务器前初始化 bitelog 日志器。
  */
-class Chat2ExcelServer {
+class Chat2ExcelServer
+{
 public:
     /**
      * @brief 初始化监听地址和端口，暂不启动监听。
@@ -37,15 +40,15 @@ public:
      *       未配置密钥时消息接口返回 503，服务器仍可启动并接受文件上传。
      * @throws std::exception ChatSDK 初始化或内存分配失败。
      */
-    explicit Chat2ExcelServer(const std::string& host = "0.0.0.0", int port = 8080);
+    explicit Chat2ExcelServer(const std::string &host = "0.0.0.0", int port = 8080);
 
     /** @brief 对象销毁前停止服务器，并等待后台线程退出。 */
     ~Chat2ExcelServer();
 
-    Chat2ExcelServer(const Chat2ExcelServer&) = delete;
-    Chat2ExcelServer& operator=(const Chat2ExcelServer&) = delete;
-    Chat2ExcelServer(Chat2ExcelServer&&) = delete;
-    Chat2ExcelServer& operator=(Chat2ExcelServer&&) = delete;
+    Chat2ExcelServer(const Chat2ExcelServer &) = delete;
+    Chat2ExcelServer &operator=(const Chat2ExcelServer &) = delete;
+    Chat2ExcelServer(Chat2ExcelServer &&) = delete;
+    Chat2ExcelServer &operator=(Chat2ExcelServer &&) = delete;
 
     /**
      * @brief 设置路由并在独立线程中启动服务器。
@@ -84,7 +87,7 @@ public:
      * @throws std::exception 无效 Excel、OpenXLSX 解析错误、字符串空间不足等；
      *         记录 bite_scaffold 日志后原样向调用方传播，不返回部分解析结果。
      */
-    std::string parseExcelFile(const std::string& fileId);
+    std::string parseExcelFile(const std::string &fileId);
 
     /**
      * @brief 按 promptTemplate.md 中的固定模板构建 Excel 数据分析提示词。
@@ -97,8 +100,8 @@ public:
      * @throws fmt::format_error 模板格式无效。
      * @throws std::exception 内存分配失败等异常；记录 bite_scaffold 日志后原样传播。
      */
-    std::string buildPrompt(const std::string& fileName, const std::string& excelData,
-                            const std::string& userQuestion) const;
+    std::string buildPrompt(const std::string &fileName, const std::string &excelData,
+                            const std::string &userQuestion) const;
 
 private:
     /**
@@ -119,7 +122,7 @@ private:
      * @throws std::exception 错误响应自身构造失败等无法恢复的标准库异常；
      *         常见参数、文件系统和写入错误均在方法内转换为 JSON 错误响应。
      */
-    void handleUploadFile(const httplib::Request& request, httplib::Response& response);
+    void handleUploadFile(const httplib::Request &request, httplib::Response &response);
 
     /**
      * @brief 接收 fileId 和 message，解析 Excel 并将模型分析结果以 SSE 实时返回。
@@ -133,7 +136,7 @@ private:
      *         请求、解析及模型错误均记录 bite_scaffold 日志后转为响应。
      * @return 无，结果由 response 及其流式内容提供器输出。
      */
-    void sendMessage(const httplib::Request& request, httplib::Response& response);
+    void sendMessage(const httplib::Request &request, httplib::Response &response);
 
     /**
      * @brief 根据 Unix 微秒时间戳生成递增的数字字符串 ID。
@@ -154,6 +157,6 @@ private:
     std::mutex fileMapMutex;
     std::unordered_map<std::string, std::string> filePathMap;
     std::unique_ptr<ai_chat_sdk::ChatSDK> chatSdk;
-    // 参考 SDK 的会话操作并非完全线程安全，串行保护模型调用，与文件映射锁相互独立。
+    // 参考 SDK 的会话操作并非完全线程安全，串行保护模型调用
     std::mutex chatSdkMutex;
 };

@@ -69,6 +69,7 @@ target_include_directories(Chat2ExcelServer PRIVATE
 )
 target_compile_definitions(Chat2ExcelServer PRIVATE
     CHAT2EXCEL_UPLOAD_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/ExcelFile"
+    CHAT2EXCEL_WEB_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/rootwww"
 )
 target_link_libraries(Chat2ExcelServer PRIVATE
     chatSdk

@@ -170,6 +170,13 @@ bool Chat2ExcelServer::start()
         const int reuseAddress = 1;
         setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&reuseAddress), sizeof(reuseAddress)); });
     setRoutes();
+    // 使用构建时确定的目录，同源提供网页和 API，不依赖启动时的工作目录。
+    if (!httpServer->set_mount_point("/", CHAT2EXCEL_WEB_DIRECTORY))
+    {
+        if (bitelog::g_logger)
+            ERR("网页目录不存在或无法访问：{}", CHAT2EXCEL_WEB_DIRECTORY);
+        return false;
+    }
     running.store(true);
     threadFinished.store(false);
 
@@ -386,12 +393,15 @@ excel文件内容:{excelData}
 
 void Chat2ExcelServer::setRoutes()
 {
-    httpServer->Get("/health", [](const httplib::Request &, httplib::Response &response)
+    const auto healthHandler = [](const httplib::Request &, httplib::Response &response)
                     {
         // 请求能进入此处理函数说明 HTTP 服务仍在处理请求。
         // 处理函数不获取生命周期锁，保证停止时可等待请求正常结束。
         response.status = 200;
-        response.set_content(R"({"status": "healthy"})", "application/json; charset=utf-8"); });
+        response.set_content(R"({"status": "healthy"})", "application/json; charset=utf-8"); };
+    // 保留已有健康检查地址，同时提供 frontend.md 指定的 API 路径。
+    httpServer->Get("/health", healthHandler);
+    httpServer->Get("/api/health", healthHandler);
     httpServer->Post("/api/uploadFile", [this](const httplib::Request &request, httplib::Response &response)
                      { handleUploadFile(request, response); });
     httpServer->Post("/api/sendMessage", [this](const httplib::Request &request, httplib::Response &response)
