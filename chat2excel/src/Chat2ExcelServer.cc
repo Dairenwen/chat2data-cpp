@@ -1,17 +1,9 @@
 #include "Chat2ExcelServer.h"
 #include "ExeclParser.h"
 
-#include <ChatSDK.h>
-#include <util/myLog.h>
-// 只使用参考 SDK 的日志器声明，清除其宏，应用代码统一使用 bite_scaffold 的日志宏。
-#undef TRACE
-#undef DBG
-#undef INFO
-#undef WARN
-#undef ERR
-#undef CRIT
-#include <bite_scaffold/log.h>
-#include <bite_scaffold/util.h>
+#include <LLMProvider.hpp>
+#include <BreezeLog.hpp>
+#include <BreezeUtil.hpp>
 #include <fmt/format.h>
 #include <httplib.h>
 
@@ -24,15 +16,6 @@
 #include <stdexcept>
 #include <system_error>
 #include <utility>
-
-/**
- * @brief 将参考 ChatSDK 的内部日志接到 bite_scaffold，避免引入另一套日志初始化和文件。
- * @return 应用日志器；调用方尚未初始化日志时使用 spdlog 默认日志器。
- */
-std::shared_ptr<spdlog::logger> bite::Logger::getLogger()
-{
-    return bitelog::g_logger ? bitelog::g_logger : spdlog::default_logger();
-}
 
 namespace
 {
@@ -80,7 +63,7 @@ namespace
         Json::Value body;
         body["success"] = false;
         body["error"] = message;
-        const auto payload = biteutil::JSON::serialize(body);
+        const auto payload = BreezeUtil::JSON::serialize(body);
         response.status = payload ? status : 500;
         response.set_content(payload.value_or(R"({"success":false,"error":"Response serialization failed"})"), "application/json; charset=utf-8");
     }
@@ -104,30 +87,23 @@ Chat2ExcelServer::Chat2ExcelServer(const std::string &host, int port)
         apiKey = std::getenv("deepseek_apikey");
     if (!apiKey || !*apiKey)
     {
-        if (bitelog::g_logger)
-            WRN("未配置 DEEPSEEK_API_KEY，消息接口暂不可用");
+        WRN("未配置 DEEPSEEK_API_KEY，消息接口暂不可用");
         return;
     }
 
-    auto modelConfig = std::make_shared<ai_chat_sdk::APIConfig>();
-    modelConfig->_modelName = "deepseek-chat";
-    modelConfig->_apiKey = apiKey;
-    modelConfig->_temperature = 0.7;
-    modelConfig->_maxTokens = 2048;
-    chatSdk = std::make_unique<ai_chat_sdk::ChatSDK>();
-    if (!chatSdk->initModels({modelConfig}))
-    {
-        throw std::runtime_error("ChatSDK 模型初始化失败");
-    }
-    // 参考 SDK 的 initModels() 即使某个模型失败也可能返回 true，再检查实际可用模型。
-    const auto models = chatSdk->getAvailableModels();
-    if (std::none_of(models.begin(), models.end(), [](const ai_chat_sdk::ModelInfo &model)
-                     { return model._modelName == "deepseek-chat" && model._isAvailable; }))
-    {
-        throw std::runtime_error("deepseek-chat 模型未就绪");
-    }
-    if (bitelog::g_logger)
-        INF("ChatSDK 初始化完成，分析模型：deepseek-chat");
+    modelBridge::ModelConfig modelConfig;
+    modelConfig.model.modelName = "deepseek-chat";
+    modelConfig.model.protocol = modelBridge::ApiProtocol::OpenAICompatible;
+    modelConfig.model.provider = modelBridge::ProviderType::DeepSeek;
+    modelConfig.baseUrl = "https://api.deepseek.com";
+    modelConfig.apiKey = apiKey;
+    modelConfig.temperature = 0.7;
+    modelConfig.maxOutputTokens = 2048;
+    modelConfig.timeoutSeconds = 300;
+    modelProvider = std::make_unique<modelBridge::OpenAICompatibleProvider>();
+    if (!modelProvider->initialize(modelConfig))
+        throw std::runtime_error("ModelBridge 初始化失败：" + modelProvider->getLastError());
+    INF("ModelBridge 初始化完成，分析模型：deepseek-chat");
 }
 
 Chat2ExcelServer::~Chat2ExcelServer()
@@ -144,10 +120,7 @@ bool Chat2ExcelServer::start()
     std::lock_guard<std::mutex> lock(lifecycleMutex);
     if (running.load() && httpServer && httpServer->is_running())
     {
-        if (bitelog::g_logger)
-        {
-            WRN("服务器已在运行，地址：{}，端口：{}", host, port);
-        }
+        WRN("服务器已在运行，地址：{}，端口：{}", host, port);
         return false;
     }
 
@@ -173,8 +146,7 @@ bool Chat2ExcelServer::start()
     // 使用构建时确定的目录，同源提供网页和 API，不依赖启动时的工作目录。
     if (!httpServer->set_mount_point("/", CHAT2EXCEL_WEB_DIRECTORY))
     {
-        if (bitelog::g_logger)
-            ERR("网页目录不存在或无法访问：{}", CHAT2EXCEL_WEB_DIRECTORY);
+        ERR("网页目录不存在或无法访问：{}", CHAT2EXCEL_WEB_DIRECTORY);
         return false;
     }
     running.store(true);
@@ -185,17 +157,13 @@ bool Chat2ExcelServer::start()
         serverThread = std::thread([this]()
                                    {
             try {
-                if (!httpServer->listen(host, port) && bitelog::g_logger) {
+                if (!httpServer->listen(host, port)) {
                     ERR("HTTP 监听失败，请检查地址或端口占用，地址：{}，端口：{}", host, port);
                 }
             } catch (const std::exception& error) {
-                if (bitelog::g_logger) {
-                    ERR("HTTP 后台线程异常：{}", error.what());
-                }
+                ERR("HTTP 后台线程异常：{}", error.what());
             } catch (...) {
-                if (bitelog::g_logger) {
-                    ERR("HTTP 后台线程发生未知异常");
-                }
+                ERR("HTTP 后台线程发生未知异常");
             }
             running.store(false);
             threadFinished.store(true); });
@@ -220,10 +188,7 @@ bool Chat2ExcelServer::start()
         return false;
     }
 
-    if (bitelog::g_logger)
-    {
-        INF("Chat2ExcelServer 启动成功，地址：{}，端口：{}，健康检查：/health", host, port);
-    }
+    INF("Chat2ExcelServer 启动成功，地址：{}，端口：{}，健康检查：/health", host, port);
     return true;
 }
 
@@ -231,7 +196,7 @@ void Chat2ExcelServer::stop()
 {
     std::lock_guard<std::mutex> lock(lifecycleMutex);
     const bool wasRunning = running.load() && httpServer && httpServer->is_running();
-    if (!wasRunning && bitelog::g_logger)
+    if (!wasRunning)
     {
         WRN("服务器未运行，无需再次停止，地址：{}，端口：{}", host, port);
     }
@@ -248,7 +213,7 @@ void Chat2ExcelServer::stop()
         serverThread.join();
     }
     running.store(false);
-    if (wasRunning && bitelog::g_logger)
+    if (wasRunning)
     {
         INF("Chat2ExcelServer 已停止，地址：{}，端口：{}", host, port);
     }
@@ -311,19 +276,13 @@ std::string Chat2ExcelServer::parseExcelFile(const std::string &fileId)
             }
         }
 
-        if (bitelog::g_logger)
-        {
-            INF("解析上传 Excel 成功，fileId：{}，工作表数量：{}，结果字节数：{}",
-                fileId, worksheetNames.size(), result.size());
-        }
+        INF("解析上传 Excel 成功，fileId：{}，工作表数量：{}，结果字节数：{}",
+            fileId, worksheetNames.size(), result.size());
         return result;
     }
     catch (const std::exception &error)
     {
-        if (bitelog::g_logger)
-        {
-            ERR("解析上传 Excel 失败，fileId：{}，原因：{}", fileId, error.what());
-        }
+        ERR("解析上传 Excel 失败，fileId：{}，原因：{}", fileId, error.what());
         throw;
     }
 }
@@ -374,19 +333,13 @@ excel文件内容:{excelData}
         // 使用已有的 fmt 依赖一次替换模板中的命名占位符；参数只作为文本插入，
         // 不会继续替换 Excel 内容或用户问题中碰巧出现的同名占位符及其他花括号。
         auto prompt = fmt::format(fmt::runtime(promptTemplate), fmt::arg("filename", fileName), fmt::arg("excelData", excelData), fmt::arg("userQuestion", userQuestion));
-        if (bitelog::g_logger)
-        {
-            INF("构建 Excel 分析提示词成功，文件名：{}，Excel 数据字节数：{}，用户问题字节数：{}，提示词字节数：{}",
-                fileName, excelData.size(), userQuestion.size(), prompt.size());
-        }
+        INF("构建 Excel 分析提示词成功，文件名：{}，Excel 数据字节数：{}，用户问题字节数：{}，提示词字节数：{}",
+            fileName, excelData.size(), userQuestion.size(), prompt.size());
         return prompt;
     }
     catch (const std::exception &error)
     {
-        if (bitelog::g_logger)
-        {
-            ERR("构建 Excel 分析提示词失败，文件名：{}，原因：{}", fileName, error.what());
-        }
+        ERR("构建 Excel 分析提示词失败，文件名：{}，原因：{}", fileName, error.what());
         throw;
     }
 }
@@ -417,7 +370,7 @@ void Chat2ExcelServer::sendMessage(const httplib::Request &request, httplib::Res
             setJsonError(response, 415, "Content-Type 必须为 application/json");
             return;
         }
-        const auto body = biteutil::JSON::unserialize(request.body);
+        const auto body = BreezeUtil::JSON::unserialize(request.body);
         if (!body || !body->isObject() || !(*body)["fileId"].isString() || !(*body)["message"].isString())
         {
             setJsonError(response, 400, "请求必须是包含字符串 fileId 和 message 的 JSON 对象");
@@ -454,13 +407,12 @@ void Chat2ExcelServer::sendMessage(const httplib::Request &request, httplib::Res
         }
         catch (const std::exception &error)
         {
-            if (bitelog::g_logger)
-                ERR("消息请求解析 Excel 失败，fileId：{}，原因：{}", fileId, error.what());
+            ERR("消息请求解析 Excel 失败，fileId：{}，原因：{}", fileId, error.what());
             setJsonError(response, 422, "Excel 文件无法解析，请检查文件内容后重新上传");
             return;
         }
         auto prompt = buildPrompt(fileName, excelData, message);
-        if (!chatSdk)
+        if (!modelProvider)
         {
             setJsonError(response, 503, "尚未配置 DEEPSEEK_API_KEY，请配置后重启服务器");
             return;
@@ -473,8 +425,7 @@ void Chat2ExcelServer::sendMessage(const httplib::Request &request, httplib::Res
         response.set_chunked_content_provider("text/event-stream; charset=utf-8",
                                               [this, fileId, prompt = std::move(prompt)](std::size_t, httplib::DataSink &sink) -> bool
                                               {
-                                                  std::unique_lock<std::mutex> sdkLock(chatSdkMutex, std::defer_lock);
-                                                  std::string sessionId;
+                                                  std::unique_lock<std::mutex> sdkLock(modelMutex, std::defer_lock);
                                                   bool connected = true;
                                                   // 负责实际写入
                                                   const auto writeFrame = [&](const std::string &frame)
@@ -486,7 +437,7 @@ void Chat2ExcelServer::sendMessage(const httplib::Request &request, httplib::Res
                                                   // 负责组织 SSE 格式
                                                   const auto writeStringEvent = [&](const std::string &text, bool isError = false)
                                                   {
-                                                      const auto json = biteutil::JSON::serialize(Json::Value(text));
+                                                      const auto json = BreezeUtil::JSON::serialize(Json::Value(text));
                                                       if (!json)
                                                           throw std::runtime_error("SSE 消息序列化失败");
                                                       // JSON 转义文本内部的换行、引号和控制字符，保证每帧只由末尾的双换行分隔。
@@ -495,16 +446,14 @@ void Chat2ExcelServer::sendMessage(const httplib::Request &request, httplib::Res
                                                   try
                                                   {
                                                       writeStringEvent("");
-                                                      // 独立保护参考 SDK 的会话生命周期；上传、健康检查使用其他工作线程继续处理。
+                                                      // 保持每次提问上下文隔离，上传和健康检查不受此锁影响。
                                                       sdkLock.lock();
                                                       if (!running.load() || (sink.is_writable && !sink.is_writable()))
                                                           throw ClientDisconnected();
-                                                      sessionId = chatSdk->createSession("deepseek-chat");
-                                                      if (sessionId.empty())
-                                                          throw std::runtime_error("模型会话创建失败");
+                                                      modelProvider->clearHistory();
                                                       bool modelFinished = false;
                                                       bool receivedContent = false;
-                                                      const auto fullResponse = chatSdk->sendMessageStream(sessionId, prompt,
+                                                      const auto fullResponse = modelProvider->sendMessageStream(prompt,
                                                                                                            [&](const std::string &chunk, bool last)
                                                                                                            {
                                                                                                                if (modelFinished)
@@ -516,24 +465,21 @@ void Chat2ExcelServer::sendMessage(const httplib::Request &request, httplib::Res
                                                                                                                }
                                                                                                                if (last)
                                                                                                                    modelFinished = true;
-                                                                                                           });
+                                                                                                           }).content;
                                                       if (fullResponse.empty() || !modelFinished)
                                                           throw std::runtime_error("模型请求失败或流未完整结束");
                                                       if (!receivedContent)
                                                           writeStringEvent(fullResponse);
-                                                      if (bitelog::g_logger)
-                                                          INF("Excel 分析流完成，fileId：{}，结果字节数：{}", fileId, fullResponse.size());
+                                                      INF("Excel 分析流完成，fileId：{}，结果字节数：{}", fileId, fullResponse.size());
                                                   }
                                                   catch (const ClientDisconnected &)
                                                   {
                                                       connected = false;
-                                                      if (bitelog::g_logger)
-                                                          INF("Excel 分析客户端断开，fileId：{}", fileId);
+                                                      INF("Excel 分析客户端断开，fileId：{}", fileId);
                                                   }
                                                   catch (const std::exception &error)
                                                   {
-                                                      if (bitelog::g_logger)
-                                                          ERR("Excel 分析流失败，fileId：{}，原因：{}", fileId, error.what());
+                                                      ERR("Excel 分析流失败，fileId：{}，原因：{}", fileId, error.what());
                                                       try
                                                       {
                                                           writeStringEvent("模型请求失败，请检查密钥、网络连接及服务器日志", true);
@@ -543,16 +489,15 @@ void Chat2ExcelServer::sendMessage(const httplib::Request &request, httplib::Res
                                                           connected = false;
                                                       }
                                                   }
-                                                  if (!sessionId.empty())
+                                                  if (sdkLock.owns_lock())
                                                   {
                                                       try
                                                       {
-                                                          chatSdk->deleteSession(sessionId);
+                                                          modelProvider->clearHistory();
                                                       }
                                                       catch (const std::exception &error)
                                                       {
-                                                          if (bitelog::g_logger)
-                                                              ERR("清理模型会话失败：{}", error.what());
+                                                          ERR("清理模型历史失败：{}", error.what());
                                                       }
                                                   }
                                                   if (sdkLock.owns_lock())
@@ -574,8 +519,7 @@ void Chat2ExcelServer::sendMessage(const httplib::Request &request, httplib::Res
     }
     catch (const std::exception &error)
     {
-        if (bitelog::g_logger)
-            ERR("处理消息请求失败：{}", error.what());
+        ERR("处理消息请求失败：{}", error.what());
         setJsonError(response, 500, "处理消息请求失败，请检查服务器日志");
     }
 }
@@ -656,7 +600,7 @@ void Chat2ExcelServer::handleUploadFile(const httplib::Request &request, httplib
 
         filePath = reservedDirectory / fileName;
         // 工具写入完成后已关闭文件，再核对长度，覆盖关闭时才出现的短写错误。
-        if (!biteutil::FUTIL::write(filePath.string(), request.body) ||
+        if (!BreezeUtil::FUTIL::write(filePath.string(), request.body) ||
             std::filesystem::file_size(filePath) != request.body.size())
         {
             throw std::runtime_error("上传文件写入失败");
@@ -672,15 +616,12 @@ void Chat2ExcelServer::handleUploadFile(const httplib::Request &request, httplib
         Json::Value result;
         result["success"] = true;
         result["result"]["fileId"] = fileId;
-        const auto payload = biteutil::JSON::serialize(result);
+        const auto payload = BreezeUtil::JSON::serialize(result);
         if (!payload)
             throw std::runtime_error("上传响应序列化失败");
         response.set_content(*payload, "application/json; charset=utf-8");
         response.status = 200;
-        if (bitelog::g_logger)
-        {
-            INF("文件上传成功，fileId：{}，路径：{}，字节数：{}", fileId, filePath.string(), request.body.size());
-        }
+        INF("文件上传成功，fileId：{}，路径：{}，字节数：{}", fileId, filePath.string(), request.body.size());
     }
     catch (const std::exception &error)
     {
@@ -695,12 +636,9 @@ void Chat2ExcelServer::handleUploadFile(const httplib::Request &request, httplib
             std::filesystem::remove(filePath, cleanupError);
         if (!reservedDirectory.empty())
             std::filesystem::remove(reservedDirectory, cleanupError);
-        if (bitelog::g_logger)
-        {
-            ERR("文件上传失败，fileId：{}，原因：{}", fileId, error.what());
-            if (cleanupError)
-                WRN("上传临时文件清理失败：{}", cleanupError.message());
-        }
+        ERR("文件上传失败，fileId：{}，原因：{}", fileId, error.what());
+        if (cleanupError)
+            WRN("上传临时文件清理失败：{}", cleanupError.message());
         setJsonError(response, 500, "文件保存失败，请检查服务器日志");
     }
 }

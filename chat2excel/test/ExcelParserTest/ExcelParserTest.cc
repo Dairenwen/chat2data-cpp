@@ -1,7 +1,7 @@
 #include "ExeclParser.h"
 
 #include <OpenXLSX.hpp>
-#include <bite_scaffold/log.h>
+#include <BreezeLog.hpp>
 #include <gtest/gtest.h>
 
 #include <cstdint>
@@ -237,17 +237,6 @@ const std::vector<WorksheetData>& businessWorksheets() {
     return worksheets;
 }
 
-/** @brief 临时禁用日志器；即使用例致命断言提前返回，也恢复原来的全局日志器。 */
-class ScopedLoggerPause {
-public:
-    ScopedLoggerPause() : savedLogger(std::move(bitelog::g_logger)) {}
-    ~ScopedLoggerPause() { bitelog::g_logger = std::move(savedLogger); }
-    ScopedLoggerPause(const ScopedLoggerPause&) = delete;
-    ScopedLoggerPause& operator=(const ScopedLoggerPause&) = delete;
-private:
-    std::shared_ptr<spdlog::logger> savedLogger;
-};
-
 /** @brief 可移植的逗号小数点环境，无需系统安装特定国家的 locale。 */
 class CommaDecimalPunctuation : public std::numpunct<char> {
 protected:
@@ -300,12 +289,8 @@ protected:
     static void SetUpTestSuite() {
         // 生成失败属于测试准备失败，使用致命断言阻止后续测试继续。
         ASSERT_NO_THROW({
-            // gtest_repeat 会重复调用本函数；已初始化时不能重复注册同名日志器。
-            if (!bitelog::g_logger) {
-                bitelog::log_settings settings;
-                settings.level = spdlog::level::off;
-                bitelog::bitelog_init(settings);
-            }
+            // BreezeLog 可重复设置日志级别，测试期间关闭输出。
+            BreezeLog::Logger::setLevel(spdlog::level::off);
             std::filesystem::create_directories(EXCEL_PARSER_TEST_DIRECTORY);
             createSingleWorksheetFile();
             createMultipleWorksheetsFile();
@@ -949,22 +934,15 @@ TEST_F(ExcelParserTest, DoesNotModifySourceWorkbookOnSuccessOrFailure) {
     EXPECT_EQ(readFileBytes(filePath), originalBytes);
 }
 
-// 覆盖全局日志器为空时的正常和异常分支，并通过 RAII 保证后续用例不受影响。
-TEST_F(ExcelParserTest, SupportsUninitializedLoggerOnSuccessAndFailure) {
-    const auto originalLogger = bitelog::g_logger;
-    ASSERT_TRUE(originalLogger);
-    {
-        const ScopedLoggerPause loggerGuard;
-        ASSERT_FALSE(bitelog::g_logger);
-        const auto filePath = testFilePath("singleWorksheet.xlsx");
-        EXPECT_EQ(ExcelParser::getWorksheetNames(filePath), std::vector<std::string>{"成绩表"});
-        EXPECT_EQ(ExcelParser::parseWorksheet(filePath, "成绩表"),
-                  "姓名,性别,年龄,C语言成绩\n张三,男,18,90\n李四,女,19,95");
-        EXPECT_THROW(ExcelParser::getWorksheetNames(""), std::invalid_argument);
-        EXPECT_THROW(ExcelParser::parseWorksheet(filePath, "不存在的表"), OpenXLSX::XLInputError);
-        EXPECT_FALSE(bitelog::g_logger);
-    }
-    EXPECT_EQ(bitelog::g_logger, originalLogger);
+// 日志器由新版脚手架自动初始化，关闭日志时解析和异常行为仍然一致。
+TEST_F(ExcelParserTest, SupportsDisabledLoggerOnSuccessAndFailure) {
+    BreezeLog::Logger::setLevel(spdlog::level::off);
+    const auto filePath = testFilePath("singleWorksheet.xlsx");
+    EXPECT_EQ(ExcelParser::getWorksheetNames(filePath), std::vector<std::string>{"成绩表"});
+    EXPECT_EQ(ExcelParser::parseWorksheet(filePath, "成绩表"),
+              "姓名,性别,年龄,C语言成绩\n张三,男,18,90\n李四,女,19,95");
+    EXPECT_THROW(ExcelParser::getWorksheetNames(""), std::invalid_argument);
+    EXPECT_THROW(ExcelParser::parseWorksheet(filePath, "不存在的表"), OpenXLSX::XLInputError);
 }
 
 // 失败之后立即解析有效文件，验证文件及工作表错误没有污染后续调用。

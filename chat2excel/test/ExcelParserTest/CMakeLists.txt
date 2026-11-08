@@ -17,22 +17,21 @@ set(OPENXLSX_LIBRARY_TYPE STATIC CACHE STRING "" FORCE)
 set(OPENXLSX_ENABLE_LTO OFF CACHE BOOL "" FORCE)
 add_subdirectory("${libSourceDirectory}/OpenXLSX/OpenXLSX" openxlsx)
 
-# 编译脚手架的真实日志模块，不依赖完整库和其他中间件。在构建目录保留其标准头文件布局，不改动解析器的 include。
-set(scaffoldSourceDirectory "${libSourceDirectory}/cpp-microservice-scaffold/source")
-configure_file("${scaffoldSourceDirectory}/log.h"
-    "${CMAKE_CURRENT_BINARY_DIR}/include/bite_scaffold/log.h" COPYONLY)
+# 编译新版脚手架的日志模块，不引入其他中间件。
+set(scaffoldSourceDirectory "${libSourceDirectory}/cpp-service-kit/source")
+set(EXCEL_PARSER_TEST_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" CACHE PATH "测试 Excel 文件目录")
 
 add_executable(ExcelParserTest
     ExcelParserTest.cc
     ../../src/ExeclParser.cc
-    "${scaffoldSourceDirectory}/log.cc"
+    "${scaffoldSourceDirectory}/BreezeLog.cpp"
 )
 target_include_directories(ExcelParserTest PRIVATE
     ../../src
-    "${CMAKE_CURRENT_BINARY_DIR}/include"
+    "${scaffoldSourceDirectory}"
 )
 target_compile_definitions(ExcelParserTest PRIVATE
-    EXCEL_PARSER_TEST_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}"
+    EXCEL_PARSER_TEST_DIRECTORY="${EXCEL_PARSER_TEST_DIRECTORY}"
 )
 target_link_libraries(ExcelParserTest PRIVATE
     OpenXLSX::OpenXLSX

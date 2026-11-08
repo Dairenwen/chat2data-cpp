@@ -1,7 +1,7 @@
 #include "ExeclParser.h"
 
 #include <OpenXLSX.hpp>
-#include <bite_scaffold/log.h>
+#include <BreezeLog.hpp>
 #include <cstdint>
 #include <exception>
 #include <iomanip>
@@ -20,15 +20,11 @@ std::vector<std::string> ExcelParser::getWorksheetNames(const std::string& fileP
         OpenXLSX::XLDocument document;
         document.open(filePath);
         auto worksheetNames = document.workbook().worksheetNames();
-        if (bitelog::g_logger) {
-            INF("获取 Excel 工作表名称成功，文件：{}，工作表数量：{}",
-                filePath, worksheetNames.size());
-        }
+        INF("获取 Excel 工作表名称成功，文件：{}，工作表数量：{}",
+            filePath, worksheetNames.size());
         return worksheetNames;
     } catch (const std::exception& error) {
-        if (bitelog::g_logger) {
-            ERR("获取 Excel 工作表名称失败，文件：{}，原因：{}", filePath, error.what());
-        }
+        ERR("获取 Excel 工作表名称失败，文件：{}，原因：{}", filePath, error.what());
         throw;
     }
 }
@@ -75,14 +71,10 @@ std::string ExcelParser::parseWorksheet(const std::string& filePath,const std::s
             result.assign(static_cast<std::size_t>(rowCount - 1), '\n');
         }
 
-        if (bitelog::g_logger) {
-            INF("解析 Excel 工作表成功，文件：{}，工作表：{}，行数：{}，列数：{}",filePath, worksheetName, rowCount, columnCount);
-        }
+        INF("解析 Excel 工作表成功，文件：{}，工作表：{}，行数：{}，列数：{}",filePath, worksheetName, rowCount, columnCount);
         return result;
     } catch (const std::exception& error) {
-        if (bitelog::g_logger) {
-            ERR("解析 Excel 工作表失败，文件：{}，工作表：{}，原因：{}",filePath, worksheetName, error.what());
-        }
+        ERR("解析 Excel 工作表失败，文件：{}，工作表：{}，原因：{}",filePath, worksheetName, error.what());
         throw;
     }
 }

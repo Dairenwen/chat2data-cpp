@@ -15,9 +15,9 @@ namespace httplib
     struct Response;
 }
 
-namespace ai_chat_sdk
+namespace modelBridge
 {
-    class ChatSDK;
+    class OpenAICompatibleProvider;
 }
 
 /**
@@ -26,7 +26,7 @@ namespace ai_chat_sdk
  * 使用独立后台线程接收请求，提供健康检查、Excel 文件上传及 AI 分析的 SSE 流式响应。
  * start() 等待实际监听成功后返回，主线程可继续执行；stop() 和析构函数负责回收后台线程。
  * start()/stop() 的生命周期操作通过互斥量串行执行，应由控制线程调用，不应在 HTTP 请求处理函数内部调用 stop()。
- * 日志使用 bite_scaffold；调用方应在创建服务器前初始化 bitelog 日志器。
+ * 日志使用 BreezeLog；日志器在首次使用时自动初始化。
  */
 class Chat2ExcelServer
 {
@@ -38,7 +38,7 @@ public:
      * @throws std::invalid_argument 地址为空或端口不在有效范围内。
      * @note 从 DEEPSEEK_API_KEY（兼容 deepseek_apikey）读取密钥，配置 deepseek-chat。
      *       未配置密钥时消息接口返回 503，服务器仍可启动并接受文件上传。
-     * @throws std::exception ChatSDK 初始化或内存分配失败。
+     * @throws std::exception ModelBridge 初始化或内存分配失败。
      */
     explicit Chat2ExcelServer(const std::string &host = "0.0.0.0", int port = 8080);
 
@@ -85,7 +85,7 @@ public:
      * @throws std::out_of_range fileId 不存在于当前服务器对象的文件映射中。
      * @throws std::filesystem::filesystem_error 文件不存在、无法获取文件大小等。
      * @throws std::exception 无效 Excel、OpenXLSX 解析错误、字符串空间不足等；
-     *         记录 bite_scaffold 日志后原样向调用方传播，不返回部分解析结果。
+     *         记录 BreezeKit 日志后原样向调用方传播，不返回部分解析结果。
      */
     std::string parseExcelFile(const std::string &fileId);
 
@@ -98,7 +98,7 @@ public:
      * @note 输入按原文插入，空字符串保留为空；输入自身的花括号不作为占位符解析。
      *       本方法不读写服务器状态，可供不同请求线程调用。
      * @throws fmt::format_error 模板格式无效。
-     * @throws std::exception 内存分配失败等异常；记录 bite_scaffold 日志后原样传播。
+     * @throws std::exception 内存分配失败等异常；记录 BreezeKit 日志后原样传播。
      */
     std::string buildPrompt(const std::string &fileName, const std::string &excelData,
                             const std::string &userQuestion) const;
@@ -112,7 +112,7 @@ private:
     void setRoutes();
 
     /**
-     * @brief 接收原始二进制文件并使用 bite_scaffold 保存到本地。
+     * @brief 接收原始二进制文件并使用 BreezeKit 保存到本地。
      * @param request POST /api/uploadFile?fileName=xxx，请求类型为 application/octet-stream。
      * @param response 成功返回 HTTP 200 和 {success:true,result:{fileId:"..."}}；
      *        参数错误返回 400，媒体类型不支持返回 415，存储失败返回 500。
@@ -131,9 +131,9 @@ private:
      *        成功建立 HTTP 200、text/event-stream、分块传输的响应。
      * @note 数据帧为 data: <JSON字符串>\n\n，结束帧为 data: [DONE]\n\n。
      *       建流后的模型错误通过 event: error 事件返回，并结束流；断连后停止写入。
-     *       每个请求独立创建、释放 SDK 会话，避免不同文件和问题混入历史上下文。
+     *       每个请求在模型调用前后清理 Provider 的历史，避免不同文件和问题混入上下文。
      * @throws std::exception 错误响应自身构造失败等无法恢复的异常；
-     *         请求、解析及模型错误均记录 bite_scaffold 日志后转为响应。
+     *         请求、解析及模型错误均记录 BreezeKit 日志后转为响应。
      * @return 无，结果由 response 及其流式内容提供器输出。
      */
     void sendMessage(const httplib::Request &request, httplib::Response &response);
@@ -156,7 +156,7 @@ private:
     // 上传线程只在操作映射时持锁，不用生命周期锁，避免停止等待请求时发生相互等待。
     std::mutex fileMapMutex;
     std::unordered_map<std::string, std::string> filePathMap;
-    std::unique_ptr<ai_chat_sdk::ChatSDK> chatSdk;
-    // 参考 SDK 的会话操作并非完全线程安全，串行保护模型调用
-    std::mutex chatSdkMutex;
+    std::unique_ptr<modelBridge::OpenAICompatibleProvider> modelProvider;
+    // 每次分析单独清理模型上下文，串行保护清理与发送的完整过程。
+    std::mutex modelMutex;
 };

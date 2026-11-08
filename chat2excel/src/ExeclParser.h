@@ -13,8 +13,7 @@ namespace OpenXLSX
  *
  * 提供工作表名称查询和工作表数据解析，不修改或保存源文件。
  * 解析结果保留第一行作为标题行，按原工作表行列顺序输出 CSV 字符串。
- * 调用方可先初始化 bitelog::bitelog_init()；已初始化时使用 bite_scaffold
- * 记录操作结果和异常，未初始化时不访问空日志器。
+ * 使用 BreezeLog 记录操作结果和异常；日志器在首次使用时自动初始化。
  */
 class ExcelParser {
 public:

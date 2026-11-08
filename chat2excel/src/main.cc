@@ -1,6 +1,6 @@
 #include "Chat2ExcelServer.h"
 
-#include <bite_scaffold/log.h>
+#include <BreezeLog.hpp>
 #include <gflags/gflags.h>
 
 #include <chrono>
@@ -42,10 +42,8 @@ int main(int argc, char *argv[])
 {
     try
     {
-        // 1. 在任何服务器操作之前初始化 bite_scaffold 的 INFO 级别日志。
-        bitelog::log_settings logSettings;
-        logSettings.level = spdlog::level::info;
-        bitelog::bitelog_init(logSettings);
+        // 1. 在任何服务器操作之前初始化 BreezeKit 的 INFO 级别日志。
+        BreezeLog::Logger::setLevel(spdlog::level::info);
 
         gflags::SetUsageMessage("Chat2ExcelServer [--host=0.0.0.0] [--port=8080]");
         gflags::ParseCommandLineFlags(&argc, &argv, true);
@@ -78,15 +76,9 @@ int main(int argc, char *argv[])
     }
     catch (const std::exception &error)
     {
-        if (bitelog::g_logger)
-        {
-            ERR("服务器启动或运行失败：{}", error.what());
-        }
-        else
-        {
-            // 日志器自身初始化失败时仍需报告原因，此时不能访问空日志器。
-            std::cerr << "日志初始化失败：" << error.what() << '\n';
-        }
+        // 日志初始化自身也可能失败，此时直接使用标准错误输出。
+        try { ERR("服务器启动或运行失败：{}", error.what()); }
+        catch (...) { std::cerr << "服务器启动或运行失败：" << error.what() << '\n'; }
         return EXIT_FAILURE;
     }
 }
