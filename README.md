@@ -1,4 +1,4 @@
-# chat2data-cpp
+# 项目运行环境
 
 A C++ microservices project for AI-powered Excel and database querying using natural language, with Docker-based development and deployment.
 
