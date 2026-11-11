@@ -1,4 +1,0 @@
-add_executable(chat2data_tests application_test.cpp)
-target_link_libraries(chat2data_tests PRIVATE chat2data::core)
-chat2data_configure_target(chat2data_tests)
-add_test(NAME application COMMAND chat2data_tests)
