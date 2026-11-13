@@ -19,3 +19,5 @@ if(BUILD_TESTING)
     target_link_libraries(utils_test PRIVATE chat2data_common Threads::Threads)
     add_test(NAME utils_test COMMAND utils_test)
 endif()
+
+add_subdirectory(svc_gatewayService)

@@ -1,4 +1,3 @@
-
 # Chat2Data 项目 UUID 生成工具类设计
 
 ## 一、系统身份
@@ -25,4 +24,4 @@
 2. 源文件：`utils.cpp`，存放工具类 `Utils` 实现。
 3. 代码文件放置在 `chat2data-cpp/chat2Data/common` 目录下。
 
-先阅读AGENT.md，再严格按照上述要求帮我实现工具类 `Utils`。
+先阅读**AGENT.md**，再严格按照上述要求帮我实现工具类 `Utils`。
