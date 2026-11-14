@@ -228,21 +228,7 @@ int count = 0;
 
 ## 8. 构建、测试与安全约定
 
-以下命令在 `chat2data` 项目目录执行；开发容器内的项目目录为 `/home/dev/workspace/chat2data-cpp/chat2data`。
-
-- **配置及构建命令**：
-
-  ```bash
-  cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-  cmake --build build --parallel
-  ```
-- **测试命令**：
-
-  ```bash
-  ctest --test-dir build --output-on-failure
-  ```
-
-### 构建与测试要求
+构建与测试要求：
 
 1. 修改后优先编译受影响的模块。
 2. 新增功能或修复 Bug 时，按需添加相应测试。
@@ -251,6 +237,7 @@ int count = 0;
 5. 测试无法执行时，应说明实际原因。
 6. 不得宣称未执行的测试已经通过。
 7. 使用**gtest**进行测试，测试注释应该写清楚，测试不应过于复杂。
+8. 除了`api-key`不要使用环境变量的方式捕捉参数，按照要求使用固定参数。
 
 ### 安全约定
 
