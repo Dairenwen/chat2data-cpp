@@ -20,4 +20,5 @@ if(BUILD_TESTING)
     add_test(NAME utils_test COMMAND utils_test)
 endif()
 
+add_subdirectory(data)
 add_subdirectory(svc_gatewayService)

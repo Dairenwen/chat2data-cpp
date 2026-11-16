@@ -75,7 +75,7 @@ service UserService {
 
 | 字段     | 类型            | 约束 | 备注                  |
 | -------- | --------------- | ---- | --------------------- |
-| ID       | BIGINT UNSIGNED | PK   | 主键                  |
+| ID       | BIGINT UNSIGNED | PK   | 自增主键              |
 | 用户 ID  | VARCHAR(32)     | UNI  | 用户业务 ID，必须唯一 |
 | 用户昵称 | VARCHAR(32)     | UNI  | 必须唯一              |
 | 用户邮箱 | VARCHAR(255)    | UNI  | 必须唯一              |
@@ -94,7 +94,7 @@ service UserService {
 
 | 字段     | 类型            | 约束 | 备注                          |
 | -------- | --------------- | ---- | ----------------------------- |
-| ID       | BIGINT UNSIGNED | PK   | 主键                          |
+| ID       | BIGINT UNSIGNED | PK   | 自增主键                      |
 | 会话 ID  | VARCHAR(32)     | UNI  | 登录会话 ID，必须唯一         |
 | 用户 ID  | VARCHAR(32)     |      | 所属用户 ID                   |
 | 过期时间 | BIGINT UNSIGNED |      | Unix 毫秒，到期后不能用于认证 |
