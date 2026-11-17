@@ -6,7 +6,7 @@
 
 用户信息和登录会话计划使用 MySQL 存储，并使用 Redis 缓存用户信息、登录会话和邮箱验证码。**服务启动后计划将节点注册到 etcd；发送验证码时，通过通知子服务发送邮件。**
 
-目前已经在 [userService.proto](../proto/userService.proto) 中定义 RPC 协议，**用户服务的数据库映射、缓存操作、业务处理、RPC 服务器和测试尚未实现；网关中的用户接口目前也只是路由占位。本文的数据库、缓存和实现流程属于待实现设计。**
+目前已经定义 RPC 协议，实现用户和会话的 ODB 数据库映射、数据访问封装及其测试；**业务处理和 RPC 服务器尚未实现，网关中的用户接口目前也只是路由占位。**
 
 ## 2. 接口定义
 
@@ -40,7 +40,7 @@ service UserService {
 }
 ```
 
-具体消息定义以 [userService.proto](../proto/userService.proto) 为准。协议使用 `proto3`、`chat2Data` 包名，开启 `cc_generic_services`，用于生成 C++ RPC 服务接口。
+具体消息定义以 [userService.proto](../../proto/userService.proto) 为准。协议使用 `proto3`、`chat2Data` 包名，开启 `cc_generic_services`，用于生成 C++ RPC 服务接口。
 
 各接口的主要请求和响应内容如下，表中省略了所有接口共有的 `request_id`，以及响应共有的 `error_code`、`error_msg`：
 
@@ -63,11 +63,11 @@ service UserService {
 - `GetUserInfo` 返回的 `user_info` 包含 `user_id`、`nickname`、`email`，不包含密码哈希。
 - `IsSessionValid` 不单独对应一个用户 HTTP 接口，网关或其他子服务可在处理请求时调用。接口文档只列出了该 RPC 名称，当前协议中的 `valid` 和 `user_id` 是为内部鉴权补充的字段。
 - `error_code` 为 0 表示成功，非 0 表示业务或服务错误；具体用户业务错误码尚待定义。RPC 传输失败还需检查调用状态。
-- HTTP 的字段和响应格式见[接口设计](../docs/接口设计.md)，网关需要完成 HTTP 与 RPC 消息之间的转换。
+- HTTP 的字段和响应格式见[接口设计](../../docs/接口设计.md)，网关需要完成 HTTP 与 RPC 消息之间的转换。
 
 ## 3. 数据库设计
 
-用户子服务产生的用户信息和登录会话计划存储在 MySQL 中，涉及用户信息表和会话表。具体设计依据[数据库设计](../docs/数据库设计.md)；**目前尚无用户服务 ODB 映射类和建表文件。**
+用户子服务产生的用户信息和登录会话计划存储在 MySQL 中，涉及用户信息表和会话表。具体设计依据[数据库设计](../../docs/数据库设计.md)；ODB 映射类和建表文件已生成。
 
 ### 3.1 用户信息表设计
 
@@ -107,7 +107,7 @@ service UserService {
 
 ## 4. 缓存设计
 
-缓存使用 Redis。用户信息和会话数据以 MySQL 为数据来源，按 Cache-Aside（旁路缓存）策略读取和失效；验证码仅保存在 Redis 中。具体策略与[数据库设计](../docs/数据库设计.md)保持一致。
+缓存使用 Redis。用户信息和会话数据以 MySQL 为数据来源，按 Cache-Aside（旁路缓存）策略读取和失效；验证码仅保存在 Redis 中。具体策略与[数据库设计](../../docs/数据库设计.md)保持一致。
 
 当前数据库设计使用 Redis Hash，每个缓存键的 `data` 字段保存序列化后的 JSON 字符串；TTL 设置在整个缓存键上。下文 `{...}` 表示键中的实际值。
 
@@ -186,7 +186,7 @@ service UserService {
 | `email`      | 接收验证码的邮箱                     |
 | `createdAt`  | 创建时间，Unix 毫秒                  |
 
-**注意：** 验证码仅存 Redis，校验和消费需要保证单次使用；**验证码通过通知子服务发送到邮箱，不在获取验证码的 RPC 响应中返回。**
+**注意：** 验证码仅存 Redis，校验和消费需要保证单次使用；键不存在或已过期统一处理。**验证码通过通知子服务发送到邮箱，不在获取验证码的 RPC 响应中返回。**
 
 ## 5. 实现流程
 
@@ -206,12 +206,12 @@ service UserService {
 ## 依赖库及参考代码
 
 1. `libSource/cpp-service-kit`：项目使用的 C++ 服务组件库，可根据实际需要使用其中的组件：
-   - 服务注册与发现：[BreezeEtcd.hpp](../../../libSource/cpp-service-kit/source/BreezeEtcd.hpp)，提供 `SvcProvider` 和 `SvcWatcher`。
-   - RPC 服务和信道管理：[BreezeRPC.hpp](../../../libSource/cpp-service-kit/source/BreezeRPC.hpp)，提供 `RpcServerFactory` 和 `SvcChannels`。
-   - Redis 连接：[BreezeRedis.hpp](../../../libSource/cpp-service-kit/source/BreezeRedis.hpp)，提供 `Breezeredis::RedisFactory`。
-   - ODB 数据库连接：[BreezeODB.hpp](../../../libSource/cpp-service-kit/source/BreezeODB.hpp)，提供 `BreezeODB::DBFactory`。
-   - JSON 序列化：[BreezeUtil.hpp](../../../libSource/cpp-service-kit/source/BreezeUtil.hpp)，提供 `BreezeUtil::JSON`。
-   - 日志：[BreezeLog.hpp](../../../libSource/cpp-service-kit/source/BreezeLog.hpp)。
-2. 网关服务配置与日志初始化：[main.cpp](../svc_gatewayService/main.cpp)。当前网关默认监听的用户服务名称为 `userService`，默认 etcd 地址为 `http://dev-etcd:2379`。
-3. 网关服务发现与路由：[gatewayServer.cpp](../svc_gatewayService/gatewayServer.cpp)、[gatewayServiceImpl.cpp](../svc_gatewayService/gatewayServiceImpl.cpp)。
-4. 项目需求与接口：[需求文档](../docs/需求文档.md)、[接口设计](../docs/接口设计.md)、[数据库设计](../docs/数据库设计.md)。
+   - 服务注册与发现：[BreezeEtcd.hpp](../../../../libSource/cpp-service-kit/source/BreezeEtcd.hpp)，提供 `SvcProvider` 和 `SvcWatcher`。
+   - RPC 服务和信道管理：[BreezeRPC.hpp](../../../../libSource/cpp-service-kit/source/BreezeRPC.hpp)，提供 `RpcServerFactory` 和 `SvcChannels`。
+   - Redis 连接：[BreezeRedis.hpp](../../../../libSource/cpp-service-kit/source/BreezeRedis.hpp)，提供 `Breezeredis::RedisFactory`。
+   - ODB 数据库连接：[BreezeODB.hpp](../../../../libSource/cpp-service-kit/source/BreezeODB.hpp)，提供 `BreezeODB::DBFactory`。
+   - JSON 序列化：[BreezeUtil.hpp](../../../../libSource/cpp-service-kit/source/BreezeUtil.hpp)，提供 `BreezeUtil::JSON`。
+   - 日志：[BreezeLog.hpp](../../../../libSource/cpp-service-kit/source/BreezeLog.hpp)。
+2. 网关服务配置与日志初始化：[main.cpp](../../svc_gatewayService/main.cpp)。当前网关默认监听的用户服务名称为 `userService`，默认 etcd 地址为 `http://dev-etcd:2379`。
+3. 网关服务发现与路由：[gatewayServer.cpp](../../svc_gatewayService/gatewayServer.cpp)、[gatewayServiceImpl.cpp](../../svc_gatewayService/gatewayServiceImpl.cpp)。
+4. 项目需求与接口：[需求文档](../../docs/需求文档.md)、[接口设计](../../docs/接口设计.md)、[数据库设计](../../docs/数据库设计.md)。

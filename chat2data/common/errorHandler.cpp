@@ -9,6 +9,7 @@ namespace chat2Data
         static const std::unordered_map<ErrorCode, std::string> descriptions = {
             {ErrorCode::SUCCESS, "操作成功"},
             // 用户子服务错误描述。
+            {ErrorCode::USER_CACHE_INVALID, "用户缓存数据无效"},
             // 文件子服务错误描述。
             // 数据库子服务错误描述。
             // Excel 解析子服务错误描述。
