@@ -28,6 +28,40 @@ namespace
         EXPECT_EQ(sessions.FindCache(session.sessionId).status, chat2Data::SessionStatus::NotFound);
     }
 
+    // Redis 与 MySQL 统一按原始字节识别会话 ID。
+    TEST_F(SessionDataTest, RequiresExactSessionId)
+    {
+        chat2Data::SessionData sessions(database, redis);
+        chat2Data::SessionEntity session;
+        session.sessionId = Track("session", prefix + "-a");
+        session.userId = prefix + "-user";
+        session.expiresAt = NowMs() + 30000;
+        sessions.Save(session);
+
+        const auto differentId = prefix + "-A";
+        EXPECT_EQ(sessions.Find(differentId, true).status, chat2Data::SessionStatus::NotFound);
+        EXPECT_FALSE(sessions.FindOwner(differentId));
+        sessions.Delete(differentId);
+        EXPECT_EQ(sessions.Find(session.sessionId).status, chat2Data::SessionStatus::Found);
+    }
+
+    // 提交前的失效步骤失败时，数据库回滚会话删除。
+    TEST_F(SessionDataTest, RollsBackWhenDeleteCannotCommit)
+    {
+        chat2Data::SessionData sessions(database, redis);
+        chat2Data::SessionEntity session;
+        session.sessionId = prefix;
+        session.userId = prefix + "-user";
+        session.expiresAt = NowMs() + 30000;
+        sessions.Save(session);
+
+        EXPECT_THROW(sessions.Delete(session.sessionId, [](odb::transaction &)
+        {
+            throw chat2Data::Chat2DataException(chat2Data::ErrorCode::USER_CACHE_INVALID);
+        }), chat2Data::Chat2DataException);
+        EXPECT_EQ(sessions.Find(session.sessionId).status, chat2Data::SessionStatus::Found);
+    }
+
     // 会话缓存有效期不超过设计规定的三天。
     TEST_F(SessionDataTest, SessionCacheDoesNotExceedThreeDays)
     {

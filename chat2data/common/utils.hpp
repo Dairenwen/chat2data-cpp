@@ -22,6 +22,14 @@ namespace chat2Data
         // 生成 xxxx-xxxxxxxx-yyyy 格式的标识符；16 位计数器循环递增。
         static std::string GenerateUUID();
 
+        // 生成 32 位十六进制凭证或六位数字验证码。
+        static std::string GenerateSecureId();
+        static std::string GenerateVerificationCode();
+
+        // 密码记录包含算法版本、随机盐和派生哈希。
+        static std::string HashPassword(const std::string &password);
+        static bool VerifyPassword(const std::string &password, const std::string &record);
+
         /**
          * @brief 获取当前系统时间。
          * @return Unix 时间戳，单位为毫秒。

@@ -10,6 +10,18 @@ namespace chat2Data
             {ErrorCode::SUCCESS, "操作成功"},
             // 用户子服务错误描述。
             {ErrorCode::USER_CACHE_INVALID, "用户缓存数据无效"},
+            {ErrorCode::USER_INVALID_INPUT, "用户请求参数无效"},
+            {ErrorCode::USER_NICKNAME_TAKEN, "昵称已被使用"},
+            {ErrorCode::USER_EMAIL_TAKEN, "邮箱已被使用"},
+            {ErrorCode::USER_REGISTER_CONFLICT, "注册信息与已有记录冲突"},
+            {ErrorCode::USER_INVALID_LOGIN, "账号或密码错误"},
+            {ErrorCode::USER_NOT_FOUND, "用户不存在"},
+            {ErrorCode::USER_SESSION_NOT_FOUND, "会话不存在"},
+            {ErrorCode::USER_SESSION_EXPIRED, "会话已过期"},
+            {ErrorCode::USER_CODE_MISMATCH, "验证码不匹配"},
+            {ErrorCode::USER_CODE_MISSING, "验证码不存在或已过期"},
+            {ErrorCode::USER_NOTIFICATION_FAILED, "验证码邮件发送失败"},
+            {ErrorCode::USER_CREDENTIAL_FAILURE, "安全凭证处理失败"},
             // 文件子服务错误描述。
             // 数据库子服务错误描述。
             // Excel 解析子服务错误描述。
@@ -60,5 +72,10 @@ namespace chat2Data
     const char *Chat2DataException::what() const noexcept
     {
         return _message.c_str();
+    }
+
+    ErrorCode Chat2DataException::Code() const noexcept
+    {
+        return _error_code;
     }
 }

@@ -1,4 +1,11 @@
+#include "BreezeRPC.hpp"
+#include "notifyService.pb.h"
+#include "sessionEntity-odb.hxx"
 #include "testSupport.hpp"
+#include "userBusiness.hpp"
+#include "utils.hpp"
+
+#include <brpc/closure_guard.h>
 
 // 开发容器中的服务名和默认端口；凭证由运行参数提供。
 DEFINE_string(mysql_host, "dev-mysql", "MySQL 服务地址");
@@ -15,7 +22,9 @@ namespace
 {
     using namespace user_data_test;
 
-    class UserDataTest : public DataTestFixture {};
+    class UserDataTest : public DataTestFixture
+    {
+    };
 
     // 验证中文用户信息查询、缓存有效期及数据库唯一约束。
     TEST_F(UserDataTest, SavesQueriesAndEnforcesUniqueNickname)
@@ -88,6 +97,211 @@ namespace
         const auto found = users.FindById(user.userId);
         ASSERT_TRUE(found);
         EXPECT_THROW(users.SaveCache(*found), sw::redis::Error);
+    }
+
+    class UserBusinessTest : public DataTestFixture
+    {
+    protected:
+        void SetUp() override
+        {
+            DataTestFixture::SetUp();
+            if (HasFatalFailure())
+                return;
+            users = std::make_shared<chat2Data::UserData>(database, redis);
+            sessions = std::make_shared<chat2Data::SessionData>(database, redis);
+            codes = std::make_shared<chat2Data::VerifyCodeData>(redis);
+            channels = std::make_shared<SvcChannels>();
+            business = std::make_unique<chat2Data::UserBusiness>(
+                std::make_shared<chat2Data::SessionManager>(sessions), users, codes, channels);
+            email = prefix + "@example.com";
+        }
+
+        std::string RegisterUser()
+        {
+            business->Register(prefix, email, password);
+            return Track("user", users->FindByEmail(email).value().userId);
+        }
+
+        std::shared_ptr<chat2Data::UserData> users;
+        std::shared_ptr<chat2Data::SessionData> sessions;
+        std::shared_ptr<chat2Data::VerifyCodeData> codes;
+        std::shared_ptr<SvcChannels> channels;
+        std::unique_ptr<chat2Data::UserBusiness> business;
+        std::string email;
+        const std::string password = "Example731!";
+    };
+
+    // 两台设备分别登录，退出一台后另一台仍可使用；访问到期的最后一个会话时校正状态。
+    TEST_F(UserBusinessTest, TracksMultipleSessionsAndReconcilesExpiryOnAccess)
+    {
+        using namespace chat2Data;
+        EXPECT_TRUE(business->ValidNickname(prefix));
+        EXPECT_TRUE(business->ValidEmail(email));
+        EXPECT_THROW(business->Register(prefix, email, "aaaaaaaa"), Chat2DataException);
+        const auto userId = RegisterUser();
+        const auto user = users->FindById(userId);
+        ASSERT_TRUE(user);
+        EXPECT_EQ(user->status, 0);
+        EXPECT_NE(user->passwordHash, password);
+        EXPECT_TRUE(sessions->FindValidByUserId(userId).empty());
+        EXPECT_FALSE(business->ValidNickname(prefix));
+        EXPECT_FALSE(business->ValidEmail(email));
+        EXPECT_THROW(business->PasswdLogin(prefix, "Wrong731!"), Chat2DataException);
+
+        const auto beforeLogin = NowMs();
+        const auto desktop = Track("session", business->PasswdLogin(prefix, password));
+        const auto phone = Track("session", business->PasswdLogin(email, password));
+        EXPECT_NE(desktop, phone);
+        ASSERT_EQ(sessions->FindValidByUserId(userId).size(), 2u);
+        EXPECT_EQ(users->FindById(userId)->status, 1);
+        EXPECT_FALSE(sessions->FindCache(desktop).session);
+        const auto expiresAt = sessions->Find(desktop).session.value().expiresAt;
+        EXPECT_GE(expiresAt, beforeLogin + kSessionLifetimeMs);
+        EXPECT_LE(expiresAt, NowMs() + kSessionLifetimeMs);
+        business->SessionLogin(desktop);
+        EXPECT_EQ(sessions->FindCache(desktop).session.value().expiresAt, expiresAt);
+        EXPECT_EQ(business->GetUserInfo(desktop).email, email);
+        ASSERT_TRUE(users->FindCache(userId));
+
+        business->Logout(desktop);
+        EXPECT_FALSE(business->IsSessionValid(desktop));
+        EXPECT_EQ(business->IsSessionValid(phone), userId);
+        EXPECT_EQ(users->FindById(userId)->status, 1);
+        business->Logout(phone);
+        EXPECT_EQ(users->FindById(userId)->status, 0);
+
+        SessionEntity expired;
+        expired.sessionId = prefix + "-expired";
+        expired.userId = userId;
+        expired.expiresAt = NowMs() + 30000;
+        sessions->Save(expired);
+        ASSERT_TRUE(users->UpdateStatus(userId));
+        ASSERT_EQ(users->FindById(userId)->status, 1);
+        users->SaveCache(users->FindById(userId).value());
+        expired.expiresAt = NowMs() - 1;
+        {
+            odb::transaction transaction(database->begin());
+            database->update(expired);
+            transaction.commit();
+        }
+        EXPECT_TRUE(sessions->FindValidByUserId(userId).empty());
+        EXPECT_FALSE(business->IsSessionValid(expired.sessionId));
+        EXPECT_EQ(users->FindById(userId)->status, 0);
+        EXPECT_FALSE(users->FindCache(userId));
+    }
+
+    // 两个请求同时注册相同邮箱，MySQL 唯一约束只允许一条记录写入。
+    TEST_F(UserBusinessTest, EnforcesEmailUniquenessAcrossConcurrentRegistrations)
+    {
+        using namespace chat2Data;
+        const auto attempt = [&](const std::string &nickname)
+        {
+            try
+            {
+                business->Register(nickname, email, password);
+                return ErrorCode::SUCCESS;
+            }
+            catch (const Chat2DataException &error)
+            {
+                return error.Code();
+            }
+        };
+        auto first = std::async(std::launch::async, attempt, prefix + "-one");
+        auto second = std::async(std::launch::async, attempt, prefix + "-two");
+        const auto firstResult = first.get();
+        const auto secondResult = second.get();
+        EXPECT_NE(firstResult == ErrorCode::SUCCESS, secondResult == ErrorCode::SUCCESS);
+        const auto rejected = firstResult == ErrorCode::SUCCESS ? secondResult : firstResult;
+        EXPECT_TRUE(rejected == ErrorCode::USER_REGISTER_CONFLICT || rejected == ErrorCode::USER_EMAIL_TAKEN);
+        const auto user = users->FindByEmail(email);
+        ASSERT_TRUE(user);
+        Track("user", user->userId);
+    }
+
+    // 退出过程中用户缓存失效失败时，会话和在线状态一起回滚。
+    TEST_F(UserBusinessTest, RollsBackLogoutWhenUserCacheIsUnavailable)
+    {
+        using namespace chat2Data;
+        UserEntity user;
+        user.userId = Track("user", prefix);
+        user.nickname = prefix;
+        user.email = email;
+        user.password = "test-hash";
+        users->Save(user);
+
+        const auto manager = std::make_shared<SessionManager>(sessions);
+        const auto sessionId = Track("session", manager->Create(user.userId));
+        ASSERT_TRUE(users->UpdateStatus(user.userId));
+
+        sw::redis::ConnectionOptions options;
+        options.host = "127.0.0.1";
+        options.port = 1;
+        const auto unavailable = std::make_shared<sw::redis::Redis>(options);
+        UserBusiness failing(manager, std::make_shared<UserData>(database, unavailable), codes, channels);
+        EXPECT_THROW(failing.Logout(sessionId), sw::redis::Error);
+        EXPECT_EQ(users->FindById(user.userId)->status, 1);
+        EXPECT_EQ(manager->GetUserId(sessionId), user.userId);
+
+        business->Logout(sessionId);
+        EXPECT_FALSE(manager->GetUserId(sessionId));
+        EXPECT_EQ(users->FindById(user.userId)->status, 0);
+    }
+
+    // 本地 RPC 服务记录验证码，测试期间只使用回环接口。
+    class TestNotification : public chat2Data::NotifyService
+    {
+    public:
+        void SendVerifyCode(google::protobuf::RpcController *, const chat2Data::SendVerifyCodeRequest *request,
+                            chat2Data::SendVerifyCodeResponse *response, google::protobuf::Closure *done) override
+        {
+            brpc::ClosureGuard guard(done);
+            const std::lock_guard<std::mutex> lock(mutex);
+            code = request->verify_code();
+            email = request->email();
+            response->set_request_id(request->request_id());
+            response->set_error_code(request->request_id() == "failed" ? 1 : 0);
+        }
+
+        std::mutex mutex;
+        std::string code;
+        std::string email;
+    };
+
+    // 验证码通过通知 RPC 投递，并在查询用户前完成一次性消费。
+    TEST_F(UserBusinessTest, SendsAndConsumesVerificationCode)
+    {
+        using namespace chat2Data;
+        const auto userId = RegisterUser();
+        EXPECT_THROW(business->GetCode(prefix, email), Chat2DataException);
+
+        TestNotification notification;
+        brpc::Server server;
+        ASSERT_EQ(server.AddService(&notification, brpc::SERVER_DOESNT_OWN_SERVICE), 0);
+        ASSERT_EQ(server.Start("127.0.0.1:0", nullptr), 0);
+        channels->setWatch("notifyService");
+        channels->addNode("notifyService", "127.0.0.1:" + std::to_string(server.listen_address().port));
+        EXPECT_THROW(business->GetCode(prefix, "unknown-" + email), Chat2DataException);
+        EXPECT_THROW(business->GetCode("failed", email), Chat2DataException);
+
+        const auto codeId = Track("verifyCode", business->GetCode(prefix, email));
+        std::string code;
+        {
+            const std::lock_guard<std::mutex> lock(notification.mutex);
+            code = notification.code;
+            EXPECT_EQ(notification.email, email);
+        }
+        ASSERT_EQ(code.size(), 6u);
+        EXPECT_EQ(code.find_first_not_of("0123456789"), std::string::npos);
+        EXPECT_THROW(business->VcodeLogin(email, codeId, "invalid"), Chat2DataException);
+        const auto session = Track("session", business->VcodeLogin(email, codeId, code));
+        EXPECT_EQ(business->IsSessionValid(session), userId);
+        EXPECT_FALSE(codes->Find(codeId));
+
+        const auto unknownEmail = "unknown-" + email;
+        const auto unknownId = Track("verifyCode", prefix);
+        ASSERT_TRUE(codes->Save({unknownId, "000123", unknownEmail, NowMs()}));
+        EXPECT_THROW(business->VcodeLogin(unknownEmail, unknownId, "000123"), Chat2DataException);
+        EXPECT_FALSE(codes->Find(unknownId));
     }
 }
 

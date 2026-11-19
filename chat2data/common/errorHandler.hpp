@@ -11,6 +11,18 @@ namespace chat2Data
 
         // 用户子服务：100～199。
         USER_CACHE_INVALID = 100, // 缓存数据无法解析或字段不完整。
+        USER_INVALID_INPUT,
+        USER_NICKNAME_TAKEN,
+        USER_EMAIL_TAKEN,
+        USER_REGISTER_CONFLICT,
+        USER_INVALID_LOGIN,
+        USER_NOT_FOUND,
+        USER_SESSION_NOT_FOUND,
+        USER_SESSION_EXPIRED,
+        USER_CODE_MISMATCH,
+        USER_CODE_MISSING,
+        USER_NOTIFICATION_FAILED,
+        USER_CREDENTIAL_FAILURE,
         // 文件子服务：200～299。
         // 数据库子服务：300～399。
         // Excel 解析子服务：400～499。
@@ -30,6 +42,7 @@ namespace chat2Data
     public:
         explicit Chat2DataException(ErrorCode error_code);
         const char *what() const noexcept override;
+        ErrorCode Code() const noexcept;
 
     private:
         ErrorCode _error_code;

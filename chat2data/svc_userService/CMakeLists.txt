@@ -9,6 +9,21 @@ set_target_properties(user_data PROPERTIES CXX_EXTENSIONS OFF)
 target_include_directories(user_data PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" PRIVATE "${BREEZEKIT_SOURCE_DIR}/source")
 target_link_libraries(user_data PUBLIC user_entities chat2data_common BreezeDep::redispp BreezeDep::hiredis JsonCpp::JsonCpp Threads::Threads spdlog::spdlog)
 
+include("${BREEZEKIT_SOURCE_DIR}/cmake/dependencies/rpc.cmake")
+protobuf_generate_cpp(NOTIFY_SOURCES NOTIFY_HEADERS ../proto/notifyService.proto)
+add_library(user_business STATIC
+    sessionManager.cpp
+    userBusiness.cpp
+    ${NOTIFY_SOURCES} ${NOTIFY_HEADERS}
+    "${BREEZEKIT_SOURCE_DIR}/source/BreezeRPC.cpp"
+)
+set_target_properties(user_business PROPERTIES CXX_EXTENSIONS OFF)
+target_include_directories(user_business PRIVATE "${BREEZEKIT_SOURCE_DIR}/source" "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(user_business PUBLIC user_data PRIVATE
+    BreezeDep::brpc protobuf::libprotobuf gflags BreezeDep::leveldb
+    OpenSSL::SSL OpenSSL::Crypto ZLIB::ZLIB ${CMAKE_DL_LIBS}
+)
+
 # 三个测试源文件共用一个测试程序及连接参数。
 if(BUILD_TESTING)
     find_package(GTest REQUIRED)
@@ -24,9 +39,10 @@ if(BUILD_TESTING)
     )
     target_compile_features(user_data_test PRIVATE cxx_std_17)
     set_target_properties(user_data_test PROPERTIES CXX_EXTENSIONS OFF)
-    target_include_directories(user_data_test PRIVATE "${BREEZEKIT_SOURCE_DIR}/source")
+    target_include_directories(user_data_test PRIVATE "${BREEZEKIT_SOURCE_DIR}/source" "${CMAKE_CURRENT_BINARY_DIR}")
     target_compile_definitions(user_data_test PRIVATE USER_DATA_SCHEMA="${PROJECT_SOURCE_DIR}/data/sql/create_tables.sql")
-    target_link_libraries(user_data_test PRIVATE user_data GTest::gtest gflags)
+    target_link_libraries(user_data_test PRIVATE user_business GTest::gtest gflags BreezeDep::brpc protobuf::libprotobuf)
+    add_dependencies(user_data_test user_business)
     add_dependencies(user_data_test user_schema)
     # CTest 通过参数列表传递连接信息；直接执行测试程序也可指定相同参数。
     if(USER_DATA_TEST_ARGS)

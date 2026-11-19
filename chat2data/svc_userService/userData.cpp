@@ -2,6 +2,7 @@
 
 #include "errorHandler.hpp"
 #include "utils.hpp"
+#include "sessionEntity-odb.hxx"
 #include "userEntity-odb.hxx"
 #include <json/json.h>
 #include <odb/database.hxx>
@@ -38,6 +39,26 @@ namespace chat2Data
             return value;
         }
 
+        // 在事务中更新用户状态，返回是否找到用户。
+        bool UpdateStatusInTransaction(odb::database &database, const std::string &userId)
+        {
+            const auto query = (odb::query<UserEntity>::userId == userId) + " FOR UPDATE"; // 行级悲观锁，避免并发登录和退出写回较早的计算结果
+            const std::unique_ptr<UserEntity> user(database.query_one<UserEntity>(query));
+            if (!user)
+                return false;
+
+            // 先锁定用户，再读取会话，避免并发登录和退出写回较早的计算结果。
+            const auto active = (odb::query<SessionEntity>::userId == userId && odb::query<SessionEntity>::expiresAt > Utils::NowMs()) + " LIMIT 1";
+            const std::unique_ptr<SessionEntity> session(database.query_one<SessionEntity>(active)); // 查询用户ID的所有有效会话
+            const int status = session ? 1 : 0;
+            // 只有在状态发生变化时才更新数据库
+            if (user->status != status)
+            {
+                user->status = status;
+                database.update(*user);
+            }
+            return true;
+        }
     }
 
     // 保存调用方传入的数据库和 Redis 客户端。
@@ -62,10 +83,26 @@ namespace chat2Data
     }
 
     // 按用户 ID 查询 MySQL。
-    std::optional<CachedUser> UserData::FindById(const std::string &userId)
+    std::optional<CachedUser> UserData::FindById(const std::string &userId, bool fillCache)
     {
-        // 对应查询条件：SELECT ... FROM tbl_user WHERE userId = ?。
-        return FromDatabase(QueryOne<UserEntity>(*_database, odb::query<UserEntity>::userId == userId));
+        auto query = odb::query<UserEntity>::userId == userId;
+        if (!fillCache)
+            return FromDatabase(QueryOne<UserEntity>(*_database, query));
+
+        // 回填期间锁定用户行，确保先前读到的状态在写入方失效缓存之前回填完成。
+        odb::transaction transaction(_database->begin());
+        // 对应查询条件：SELECT ... FROM tbl_user WHERE userId = ? FOR UPDATE，加上行级悲观锁
+        query += " FOR UPDATE";
+        const std::unique_ptr<UserEntity> user(_database->query_one<UserEntity>(query));
+        std::optional<CachedUser> cached;
+        if (user)
+        {
+            cached = ToCache(*user);
+            SaveCache(*cached);
+        }
+        transaction.commit();
+        // 悲观锁在事务提交后释放，确保回填完成后才允许其他线程修改用户状态。
+        return cached;
     }
 
     // 昵称没有独立缓存索引，以数据库查询结果为准。
@@ -94,6 +131,18 @@ namespace chat2Data
     {
         // SELECT ... FROM tbl_user WHERE email = ?；有记录即表示邮箱存在。
         return QueryOne<UserEntity>(*_database, odb::query<UserEntity>::email == email).has_value();
+    }
+
+    // 锁定用户记录，按有效会话更新状态
+    bool UserData::UpdateStatus(const std::string &userId, odb::transaction *transaction)
+    {
+        if (transaction)
+            return UpdateStatusInTransaction(transaction->database(), userId);
+
+        odb::transaction operation(_database->begin());
+        const bool found = UpdateStatusInTransaction(*_database, userId);
+        operation.commit();
+        return found;
     }
 
     // 将用户业务字段序列化到 Redis，并设置一小时 TTL。

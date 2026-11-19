@@ -3,15 +3,108 @@
 #include "errorHandler.hpp"
 
 #include <atomic>
+#include <array>
 #include <chrono>
 #include <cstdint>
+#include <limits>
+#include <openssl/crypto.h>
+#include <openssl/evp.h>
+#include <openssl/rand.h>
 #include <random>
+#include <string_view>
 #include <sw/redis++/redis.h>
 #include <sw/redis++/transaction.h>
 #include <sw/redis++/queued_redis.h>
 
 namespace chat2Data
 {
+    namespace
+    {
+        constexpr std::string_view kPasswordVersion = "pbkdf2-sha256-v1$";
+        constexpr int kPasswordIterations = 600000;
+        constexpr std::size_t kSaltBytes = 16;
+        constexpr std::size_t kHashBytes = 32;
+        constexpr char kHexDigits[] = "0123456789abcdef";
+
+        template <std::size_t Size>
+        std::array<unsigned char, Size> SecureBytes()
+        {
+            std::array<unsigned char, Size> bytes{};
+            if (RAND_bytes(bytes.data(), bytes.size()) != 1)
+                throw Chat2DataException(ErrorCode::USER_CREDENTIAL_FAILURE);
+            return bytes;
+        }
+        // 将字节数组编码为十六进制字符串
+        template <std::size_t Size>
+        std::string HexEncode(const std::array<unsigned char, Size> &bytes)
+        {
+            std::string result;
+            result.reserve(2 * Size);
+            for (const auto byte : bytes)
+            {
+                result += kHexDigits[byte >> 4];
+                result += kHexDigits[byte & 0x0f];
+            }
+            return result;
+        }
+        // 派生密码哈希，使用 PBKDF2-HMAC-SHA256 算法。
+        std::string DerivePasswordHash(const std::string &password, std::string_view salt)
+        {
+            std::array<unsigned char, kHashBytes> hash{};
+            if (password.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
+                PKCS5_PBKDF2_HMAC(password.data(), static_cast<int>(password.size()),
+                                  reinterpret_cast<const unsigned char *>(salt.data()), static_cast<int>(salt.size()),
+                                  kPasswordIterations, EVP_sha256(), hash.size(), hash.data()) != 1)
+                throw Chat2DataException(ErrorCode::USER_CREDENTIAL_FAILURE);
+            return HexEncode(hash);
+        }
+    }
+
+    // 生成 xxxx-xxxxxxxx-yyyy 格式的标识符；16 位计数器循环递增
+    std::string Utils::GenerateSecureId()
+    {
+        return HexEncode(SecureBytes<16>());
+    }
+
+    // 生成六位数字验证码，使用安全随机数生成器。
+    std::string Utils::GenerateVerificationCode()
+    {
+        std::string code;
+        while (code.size() < 6)
+        {
+            for (const auto byte : SecureBytes<6>())
+            {
+                // 前 250 个取值能等概率映射到十个数字。
+                if (byte < 250)
+                    code += static_cast<char>('0' + byte % 10);
+                if (code.size() == 6)
+                    break;
+            }
+        }
+        return code;
+    }
+
+    // 派生密码哈希，使用 PBKDF2-HMAC-SHA256 算法
+    std::string Utils::HashPassword(const std::string &password)
+    {
+        //
+        const auto salt = HexEncode(SecureBytes<kSaltBytes>());
+        return std::string(kPasswordVersion) + salt + '$' + DerivePasswordHash(password, salt);
+    }
+
+    // 验证密码是否与记录的哈希匹配，使用 PBKDF2-HMAC-SHA256 算法
+    bool Utils::VerifyPassword(const std::string &password, const std::string &record)
+    {
+        constexpr auto separator = kPasswordVersion.size() + 2 * kSaltBytes;
+        if (record.size() != separator + 1 + 2 * kHashBytes ||
+            record.compare(0, kPasswordVersion.size(), kPasswordVersion) != 0 || record[separator] != '$')
+            return false;
+
+        const auto salt = std::string_view(record).substr(kPasswordVersion.size(), 2 * kSaltBytes);
+        const auto hash = DerivePasswordHash(password, salt);
+        return CRYPTO_memcmp(hash.data(), record.data() + separator + 1, hash.size()) == 0;
+    }
+
     std::uint64_t Utils::NowMs()
     {
         return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(

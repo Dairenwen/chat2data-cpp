@@ -15,6 +15,7 @@ namespace sw::redis
 namespace odb
 {
     class database;
+    class transaction;
 }
 
 namespace chat2Data
@@ -30,7 +31,7 @@ namespace chat2Data
     };
 
     // 用户信息的数据访问入口；数据库和 Redis 客户端由调用方创建并共享。
-    // 读流程由业务层先查询缓存，未命中时查询 MySQL 并回填；写流程先写 MySQL 再删除缓存。数据库、Redis 和缓存数据格式错误均向调用方报告。
+    // 业务层编排缓存查询、回填和失效。数据库、Redis 和缓存数据格式错误均向调用方报告。
     class UserData
     {
     public:
@@ -50,9 +51,10 @@ namespace chat2Data
         /**
          * @brief 在 MySQL 中按用户 ID 查找。
          * @param userId 用户 ID。
+         * @param fillCache 为 true 时，在用户行锁内回填缓存。
          * @return 用户缓存信息；不存在时为空。
          */
-        std::optional<CachedUser> FindById(const std::string &userId);
+        std::optional<CachedUser> FindById(const std::string &userId, bool fillCache = false);
         /**
          * @brief 在 MySQL 中按昵称查找。
          * @param nickname 用户昵称。
@@ -77,6 +79,14 @@ namespace chat2Data
          * @return 存在时为 true。
          */
         bool EmailExists(const std::string &email);
+        /**
+         * @brief 锁定用户记录，按有效会话更新状态。
+         * @param userId 用户 ID。
+         * @param transaction 退出登录时传入会话事务，由调用方提交。
+         * @return 用户存在时为 true；不存在时为 false。
+         * @note 用户缓存由业务层失效。
+         */
+        bool UpdateStatus(const std::string &userId, odb::transaction *transaction = nullptr);
         /**
          * @brief 保存用户缓存并设置一小时 TTL。
          * @param user 用户缓存信息。

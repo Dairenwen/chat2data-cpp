@@ -15,12 +15,19 @@ namespace chat2Data
 {
     namespace
     {
-        constexpr std::uint64_t kSessionTtlMs = 3ULL * 24 * 3600 * 1000;
         // 会话缓存键和数据库实体到缓存字段的转换。
         std::string SessionKey(const std::string &id) { return "session:" + id; }
         CachedSession ToCache(const SessionEntity &session)
         {
             return {session.sessionId, session.userId, session.expiresAt};
+        }
+
+        // 构造ODB查询，先用索引过滤sessionId，再通过二进制比对实现字节级严格匹配，对齐Redis Key的大小写敏感语义，防止MySQL排序规则造成错误命中
+        odb::query<SessionEntity> ExactSessionId(const std::string &sessionId)
+        {
+            using Query = odb::query<SessionEntity>;
+            // MySQL 的文本排序规则与 Redis 的键比较不同，凭证按原始字节匹配。
+            return (Query::sessionId == sessionId) && (Query("CAST(`tbl_session`.`sessionId` AS BINARY) =") + Query::_val(sessionId));
         }
     }
 
@@ -38,25 +45,62 @@ namespace chat2Data
     }
 
     // 查询 MySQL 中的会话并检查有效期。
-    SessionResult SessionData::Find(const std::string &sessionId)
+    SessionResult SessionData::Find(const std::string &sessionId, bool fillCache)
     {
-        // 对应查询条件：SELECT ... FROM tbl_session WHERE sessionId = ?。
+        auto query = ExactSessionId(sessionId);
+        // 与退出删除争用同一会话行锁，已开始的回填会在删除语句执行前结束。
+        if (fillCache)
+            query += " FOR UPDATE";
+
         odb::transaction transaction(_database->begin());
-        std::unique_ptr<SessionEntity> session(_database->query_one<SessionEntity>(odb::query<SessionEntity>::sessionId == sessionId));
+        const std::unique_ptr<SessionEntity> session(_database->query_one<SessionEntity>(query));
+        SessionResult result{SessionStatus::NotFound, std::nullopt};
+        // 如果查询到会话，检查过期时间；如果未过期，回填缓存，如果过期
+        if (session)
+        {
+            result.status = SessionStatus::Expired;
+            if (session->expiresAt > Utils::NowMs())
+            {
+                auto value = ToCache(*session);
+                if ((!fillCache || SaveCache(value)) && value.expiresAt > Utils::NowMs())
+                    result = {SessionStatus::Found, std::move(value)};
+            }
+        }
         transaction.commit();
-        if (!session)
-            return {SessionStatus::NotFound, std::nullopt};
-        if (session->expiresAt <= Utils::NowMs())
-            return {SessionStatus::Expired, std::nullopt};
-        return {SessionStatus::Found, ToCache(*session)};
+        return result;
     }
 
-    // 直接删除 MySQL 中的会话；延迟双删由业务层组织。
-    void SessionData::Delete(const std::string &sessionId)
+    // 查询指定用户的所有未过期会话
+    std::vector<CachedSession> SessionData::FindValidByUserId(const std::string &userId)
+    {
+        using Query = odb::query<SessionEntity>;
+        odb::transaction transaction(_database->begin());
+        std::vector<CachedSession> sessions;
+        for (const auto &session : _database->query<SessionEntity>(
+                 Query::userId == userId && Query::expiresAt > Utils::NowMs()))
+            sessions.push_back(ToCache(session));
+        transaction.commit();
+        return sessions;
+    }
+
+    // 查询会话归属，包括已过期记录，供业务层校正在线状态
+    std::optional<std::string> SessionData::FindOwner(const std::string &sessionId)
     {
         odb::transaction transaction(_database->begin());
-        // ODB 生成 DELETE FROM tbl_session WHERE sessionId = ?，无需先查询记录。
-        _database->erase_query<SessionEntity>(odb::query<SessionEntity>::sessionId == sessionId);
+        const std::unique_ptr<SessionEntity> session(_database->query_one<SessionEntity>(ExactSessionId(sessionId)));
+        transaction.commit();
+        return session ? std::optional<std::string>(session->userId) : std::nullopt;
+    }
+
+    // 删除 MySQL 中的会话，事务提交前可执行回调操作
+    void SessionData::Delete(const std::string &sessionId, const std::function<void(odb::transaction &)> &beforeCommit)
+    {
+        odb::transaction transaction(_database->begin());
+        // ODB 生成 DELETE FROM tbl_session WHERE sessionId = ?
+        _database->erase_query<SessionEntity>(ExactSessionId(sessionId));
+        // 若设置了回调，则在删除语句执行后、事务提交前执行，允许业务层在事务内处理其他数据。
+        if (beforeCommit)
+            beforeCommit(transaction);
         transaction.commit();
     }
 
@@ -70,7 +114,8 @@ namespace chat2Data
         value["sessionId"] = session.sessionId;
         value["userId"] = session.userId;
         value["expiresAt"] = Json::UInt64(session.expiresAt);
-        Utils::WriteCache(*_redis, SessionKey(session.sessionId), value, std::min(kSessionTtlMs, session.expiresAt - now));
+        // 这里返回剩余时间和三天的较小值，避免回填延长会话有效期
+        Utils::WriteCache(*_redis, SessionKey(session.sessionId), value, std::min(kSessionLifetimeMs, session.expiresAt - now));
         return true;
     }
 
