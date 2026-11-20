@@ -40,8 +40,7 @@ namespace chat2Data
          * @param updateStatus 可选回调，在第二次删除缓存后使用同一事务校正用户状态。
          * @note 回调同步执行，事务引用的使用范围限于回调。提交前发生异常时回滚 MySQL 变更。
          */
-        void Delete(const std::string &sessionId,
-                    const std::function<void(odb::transaction &)> &updateStatus = {});
+        void Delete(const std::string &sessionId, const std::function<void(odb::transaction &)> &updateStatus = {});
         /**
          * @brief 直接删除尚未交付的会话记录，用于补偿登录失败。
          * @param sessionId 尚未返回给客户端的会话 ID。
@@ -49,6 +48,7 @@ namespace chat2Data
         void DiscardUnissued(const std::string &sessionId);
 
     private:
+        // 删除缓存时忽略 Redis 异常，避免影响数据库事务提交
         void InvalidateCache(const std::string &sessionId);
 
         std::shared_ptr<SessionData> _sessions;

@@ -11,12 +11,12 @@
 DEFINE_string(mysql_host, "dev-mysql", "MySQL 服务地址");
 DEFINE_uint32(mysql_port, 3306, "MySQL 服务端口");
 DEFINE_string(mysql_user, "root", "MySQL 用户名");
-DEFINE_string(mysql_password, "", "MySQL 密码");
+DEFINE_string(mysql_password, "123456", "MySQL 密码");
 DEFINE_string(mysql_database, "chat2data", "MySQL 数据库名");
 DEFINE_string(redis_host, "dev-redis", "Redis 服务地址");
 DEFINE_int32(redis_port, 6379, "Redis 服务端口");
 DEFINE_string(redis_user, "default", "Redis 用户名");
-DEFINE_string(redis_password, "", "Redis 密码");
+DEFINE_string(redis_password, "123456", "Redis 密码");
 
 namespace
 {
@@ -188,6 +188,36 @@ namespace
         EXPECT_FALSE(business->IsSessionValid(expired.sessionId));
         EXPECT_EQ(users->FindById(userId)->status, 0);
         EXPECT_FALSE(users->FindCache(userId));
+    }
+
+    // 会话登录分别报告缺失和过期，内部会话校验均返回无效。
+    TEST_F(UserBusinessTest, DistinguishesMissingAndExpiredSessions)
+    {
+        using namespace chat2Data;
+        const auto user_id = RegisterUser();
+        SessionEntity expired;
+        expired.sessionId = Track("session", prefix + "-expired");
+        expired.userId = user_id;
+        expired.expiresAt = NowMs() - 1;
+        sessions->Save(expired);
+
+        const auto expect_rejection = [&](const std::string &session_id, ErrorCode expected)
+        {
+            try
+            {
+                business->SessionLogin(session_id);
+                ADD_FAILURE() << "无效会话应返回登录错误。";
+            }
+            catch (const Chat2DataException &error)
+            {
+                EXPECT_EQ(error.Code(), expected);
+            }
+            EXPECT_FALSE(business->IsSessionValid(session_id));
+        };
+
+        expect_rejection(prefix + "-missing", ErrorCode::USER_SESSION_NOT_FOUND);
+        expect_rejection(expired.sessionId, ErrorCode::USER_SESSION_EXPIRED);
+        EXPECT_FALSE(sessions->FindCache(expired.sessionId).session);
     }
 
     // 两个请求同时注册相同邮箱，MySQL 唯一约束只允许一条记录写入。

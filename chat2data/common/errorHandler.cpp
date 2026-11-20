@@ -22,6 +22,7 @@ namespace chat2Data
             {ErrorCode::USER_CODE_MISSING, "验证码不存在或已过期"},
             {ErrorCode::USER_NOTIFICATION_FAILED, "验证码邮件发送失败"},
             {ErrorCode::USER_CREDENTIAL_FAILURE, "安全凭证处理失败"},
+            {ErrorCode::USER_BUSINESS_FAILED, "用户业务处理失败"},
             // 文件子服务错误描述。
             // 数据库子服务错误描述。
             // Excel 解析子服务错误描述。

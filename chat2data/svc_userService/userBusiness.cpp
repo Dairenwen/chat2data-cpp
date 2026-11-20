@@ -142,13 +142,14 @@ namespace chat2Data
         if (!user || user->email != email)
             throw Chat2DataException(ErrorCode::USER_NOT_FOUND);
 
+        // 通知服务的 RPC 调用，若失败则抛出异常。验证码通过邮件发送给用户
         const auto channel = _channels->getNode("notifyService");
         if (!channel)
             throw Chat2DataException(ErrorCode::USER_NOTIFICATION_FAILED);
 
-        const CachedVerifyCode code{Utils::GenerateSecureId(), Utils::GenerateVerificationCode(),
-                                    user->email, Utils::NowMs()};
-        if (!_codes->Save(code))
+        // 准备好验证码ID、验证码、邮箱和创建时间
+        const CachedVerifyCode code{Utils::GenerateSecureId(), Utils::GenerateVerificationCode(), user->email, Utils::NowMs()};
+        if (!_codes->Save(code)) // 写入MySQL
             throw Chat2DataException(ErrorCode::USER_CODE_MISSING);
 
         SendVerifyCodeRequest request;
@@ -157,8 +158,8 @@ namespace chat2Data
         request.set_verify_code(code.verifyCode);
         SendVerifyCodeResponse response;
         brpc::Controller controller;
-        // 发信结果不确定时，自动重试可能导致同一封验证码邮件重复投递。
-        controller.set_max_retry(0);
+        controller.set_max_retry(0); // 禁止自动重试，避免重复投递验证码邮件
+        // 正式调用通知子服务的 SendVerifyCode RPC 接口，若失败则删除验证码并抛出异常
         NotifyService_Stub(channel.get()).SendVerifyCode(&controller, &request, &response, nullptr);
         if (controller.Failed() || response.error_code() != 0 || response.request_id() != requestId)
         {
@@ -172,14 +173,14 @@ namespace chat2Data
     std::string UserBusiness::VcodeLogin(const std::string &email, const std::string &codeId, const std::string &code)
     {
         ValidateEmail(email);
-        const auto result = _codes->Consume(codeId, email, code);
+        const auto result = _codes->Consume(codeId, email, code); // 消费验证码，若不匹配或过期则返回对应结果
         if (result == VerifyCodeResult::Mismatch)
             throw Chat2DataException(ErrorCode::USER_CODE_MISMATCH);
         if (result == VerifyCodeResult::MissingOrExpired)
             throw Chat2DataException(ErrorCode::USER_CODE_MISSING);
 
         const auto user = _users->FindByEmail(email);
-        // 邮箱投递地址必须与注册地址完全一致，避免数据库排序规则折叠不同地址。
+        // 邮箱投递地址必须与注册地址完全一致
         if (!user || user->email != email)
             throw Chat2DataException(ErrorCode::USER_NOT_FOUND);
         return CreateLoginSession(user->userId);

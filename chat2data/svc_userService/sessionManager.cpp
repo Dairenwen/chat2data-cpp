@@ -17,7 +17,7 @@ namespace chat2Data
     std::string SessionManager::Create(const std::string &userId)
     {
         SessionEntity session;
-        session.sessionId = Utils::GenerateSecureId();
+        session.sessionId = Utils::GenerateSecureId(); // 调用 Utils::GenerateSecureId() 生成一个安全的会话 ID
         session.userId = userId;
         session.expiresAt = Utils::NowMs() + kSessionLifetimeMs;
         _sessions->Save(session);
@@ -36,8 +36,8 @@ namespace chat2Data
 
     SessionResult SessionManager::Find(const std::string &sessionId)
     {
-        auto result = _sessions->FindCache(sessionId);
-        if (result.status == SessionStatus::NotFound)
+        auto result = _sessions->FindCache(sessionId); // 直接去访问redis
+        if (result.status == SessionStatus::NotFound)  // 如果没有命中缓存，则查询数据库并回填缓存，会采用行锁避免与删除争用
             return _sessions->Find(sessionId, true);
         return result;
     }
@@ -55,18 +55,20 @@ namespace chat2Data
         return _sessions->FindOwner(sessionId);
     }
 
-    void SessionManager::Delete(const std::string &sessionId,
-                                const std::function<void(odb::transaction &)> &updateStatus)
+    void SessionManager::Delete(const std::string &sessionId, const std::function<void(odb::transaction &)> &updateStatus)
     {
+        // 先删除缓存
         InvalidateCache(sessionId);
+        // 再来删除数据库，事务提交前可执行回调操作校正用户在线状态
         _sessions->Delete(sessionId, [&](odb::transaction &transaction)
                           {
-            // 删除事务持有会话行锁，使并发回填查询等待事务结束。
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            // 第二次删缓存成功后提交删除，失败则由数据库事务回滚。
-            InvalidateCache(sessionId);
-            if (updateStatus)
-                updateStatus(transaction); });
+                            // 删除事务持有会话行锁，使并发回填查询等待事务结束。
+                            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                            // 第二次删缓存成功后提交删除，失败则由数据库事务回滚。
+                            InvalidateCache(sessionId);
+                            // 如果提供了回调，在事务提交前执行，使用同一事务校正用户状态
+                            if (updateStatus)
+                                updateStatus(transaction); });
     }
 
     // 删除尚未交付的会话，避免失败的创建留下有效会话。
@@ -83,7 +85,7 @@ namespace chat2Data
         }
         catch (const sw::redis::Error &)
         {
-            // DEL 可以安全重试，重试失败由调用方处理。
+            // 删除缓存失败时默认再次尝试，避免影响数据库事务提交。若仍失败则忽略异常。
             _sessions->DeleteCache(sessionId);
         }
     }

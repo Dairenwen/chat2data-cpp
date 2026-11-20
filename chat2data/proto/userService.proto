@@ -1,12 +1,12 @@
 syntax = "proto3";
-package chat2Data;
+package chat2Data;// 注意定义的命名空间，与chat2data区别，后者是项目的命名空间
 option cc_generic_services = true;// 生成 C++ 的通用服务接口
 
 // 用户信息只包含对外展示的字段
 message UserInfo {
-  string user_id = 1;   // 用户 ID。
+  string user_id  = 1;   // 用户 ID。
   string nickname = 2;  // 用户昵称。
-  string email = 3;     // 用户邮箱。
+  string email    = 3;     // 用户邮箱。
 }
 
 // 响应中的 error_code：0 表示调用成功，非 0 表示业务或服务错误。
@@ -16,39 +16,39 @@ message UserInfo {
 // 检测昵称是否唯一
 message ValidNicknameRequest {
   string request_id = 1;  // 请求 ID。
-  string nickname = 2;  // 待检测的昵称。
+  string nickname   = 2;  // 待检测的昵称。
 }
 
 message ValidNicknameResponse {
   string request_id = 1;  // 对应的请求 ID。
-  int32 error_code = 2;  // 0 表示昵称可用；不可用时返回对应错误码。
-  string error_msg = 3;  // 错误描述。
+  int32  error_code = 2;  // 0 表示昵称可用；不可用时返回对应错误码。
+  string error_msg  = 3;  // 错误描述。
 }
 
 // 检测邮箱是否唯一。
 message ValidEmailRequest {
   string request_id = 1;  // 请求 ID。
-  string email = 2;  // 待检测的邮箱。
+  string email      = 2;  // 待检测的邮箱。
 }
 
 message ValidEmailResponse {
   string request_id = 1;  // 对应的请求 ID。
-  int32 error_code = 2;  // 0 表示邮箱可用；不可用时返回对应错误码。
-  string error_msg = 3;  // 错误描述。
+  int32  error_code = 2;  // 0 表示邮箱可用；不可用时返回对应错误码。
+  string error_msg  = 3;  // 错误描述。
 }
 
 // 注册用户。
 message UserRegisterRequest {
   string request_id = 1;  // 请求 ID。
-  string nickname = 2;     // 用户昵称。
-  string password = 3;  // 用户输入的密码；服务端只持久化带盐密码哈希。
-  string email = 4;       // 用户邮箱。
+  string nickname   = 2;     // 用户昵称。
+  string password   = 3;  // 用户输入的密码；服务端只持久化带盐密码哈希。
+  string email      = 4;       // 用户邮箱。
 }
 
 message UserRegisterResponse {
   string request_id = 1;  // 对应的请求 ID。
-  int32 error_code = 2;   // 注册结果错误码。
-  string error_msg = 3;   // 错误描述。
+  int32  error_code = 2;   // 注册结果错误码。
+  string error_msg  = 3;   // 错误描述。
 }
 
 // 使用已有的登录会话登录。
@@ -59,49 +59,49 @@ message SessionLoginRequest {
 
 message SessionLoginResponse {
   string request_id = 1;  // 对应的请求 ID。
-  int32 error_code = 2;   // 会话登录结果错误码。
-  string error_msg = 3;   // 错误描述。
+  int32  error_code = 2;   // 会话登录结果错误码。
+  string error_msg  = 3;   // 错误描述。
 }
 
 // 使用昵称或邮箱及密码登录。
 message PasswdLoginRequest {
   string request_id = 1;  // 请求 ID。
-  string nickname = 2;  // 登录账号：用户昵称或注册邮箱。
-  string password = 3;    // 用户输入的密码。
+  string nickname   = 2;  // 登录账号：用户昵称或注册邮箱。
+  string password   = 3;    // 用户输入的密码。
 }
 
 message PasswdLoginResponse {
   string request_id = 1;  // 对应的请求 ID。
-  int32 error_code = 2;   // 密码登录结果错误码。
-  string error_msg = 3;   // 错误描述。
+  int32  error_code = 2;   // 密码登录结果错误码。
+  string error_msg  = 3;   // 错误描述。
   string session_id = 4;  // 成功后创建的登录会话 ID。
 }
 
 // 请求向邮箱发送验证码。
 message GetCodeRequest {
   string request_id = 1;  // 请求 ID。
-  string email = 2;  // 接收验证码的邮箱。
+  string email      = 2;  // 接收验证码的邮箱。
 }
 
 message GetCodeResponse {
   string request_id = 1;  // 对应的请求 ID。
-  int32 error_code = 2;   // 获取验证码结果错误码。
-  string error_msg = 3;   // 错误描述。
-  string code_id = 4;  // 验证码 ID；验证码通过邮件发送，不在响应中返回。
+  int32  error_code = 2;   // 获取验证码结果错误码。
+  string error_msg  = 3;   // 错误描述。
+  string code_id    = 4;  // 验证码 ID；验证码通过邮件发送，不在响应中返回。
 }
 
 // 使用邮箱验证码登录。
 message VcodeLoginRequest {
-  string request_id = 1;   // 请求 ID。
-  string email = 2;        // 接收验证码的邮箱。
+  string request_id  = 1;   // 请求 ID。
+  string email       = 2;        // 接收验证码的邮箱。
   string verify_code = 3;  // 六位数字字符串，保留前导零。
-  string code_id = 4;      // 获取验证码时返回的 ID。
+  string code_id     = 4;      // 获取验证码时返回的 ID。
 }
 
 message VcodeLoginResponse {
   string request_id = 1;  // 对应的请求 ID。
-  int32 error_code = 2;   // 验证码登录结果错误码。
-  string error_msg = 3;   // 错误描述。
+  int32  error_code = 2;   // 验证码登录结果错误码。
+  string error_msg  = 3;   // 错误描述。
   string session_id = 4;  // 成功后创建的登录会话 ID。
 }
 
@@ -113,8 +113,8 @@ message LogoutRequest {
 
 message LogoutResponse {
   string request_id = 1;  // 对应的请求 ID。
-  int32 error_code = 2;   // 退出登录结果错误码。
-  string error_msg = 3;   // 错误描述。
+  int32  error_code = 2;   // 退出登录结果错误码。
+  string error_msg  = 3;   // 错误描述。
 }
 
 // 根据登录会话获取当前用户信息。
@@ -124,10 +124,10 @@ message GetUserInfoRequest {
 }
 
 message GetUserInfoResponse {
-  string request_id = 1;  // 对应的请求 ID。
-  int32 error_code = 2;   // 获取用户信息结果错误码。
-  string error_msg = 3;   // 错误描述。
-  UserInfo user_info = 4;  // 成功时返回用户信息。
+  string   request_id = 1;  // 对应的请求 ID。
+  int32    error_code = 2;   // 获取用户信息结果错误码。
+  string   error_msg  = 3;   // 错误描述。
+  UserInfo user_info  = 4;  // 成功时返回用户信息。
 }
 
 // 内部接口：供网关或其他子服务校验登录会话，并获取对应用户 ID。
@@ -138,12 +138,13 @@ message IsSessionValidRequest {
 
 message IsSessionValidResponse {
   string request_id = 1; // 对应的请求 ID。
-  int32 error_code = 2;  // 校验过程发生业务或服务错误时为非 0。
-  string error_msg = 3;  // 错误描述。
-  bool valid = 4;        // 校验成功且会话有效时为 true；不存在或已过期时为 false。
-  string user_id = 5;    // 仅会话有效时返回对应用户 ID。
+  int32  error_code = 2;  // 校验过程发生业务或服务错误时为非 0。
+  string error_msg  = 3;  // 错误描述。
+  bool   valid      = 4;        // 校验成功且会话有效时为 true；不存在或已过期时为 false。
+  string user_id    = 5;    // 仅会话有效时返回对应用户 ID。
 }
 
+// 定义UserService服务接口，实现时需要继承自 UserService
 service UserService {
   // 检测用户昵称是否唯一。
   rpc ValidNickname(ValidNicknameRequest) returns (ValidNicknameResponse);

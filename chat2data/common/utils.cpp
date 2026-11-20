@@ -20,12 +20,13 @@ namespace chat2Data
 {
     namespace
     {
-        constexpr std::string_view kPasswordVersion = "pbkdf2-sha256-v1$";
-        constexpr int kPasswordIterations = 600000;
-        constexpr std::size_t kSaltBytes = 16;
-        constexpr std::size_t kHashBytes = 32;
-        constexpr char kHexDigits[] = "0123456789abcdef";
+        constexpr std::string_view kPasswordVersion = "pbkdf2-sha256-v1$"; // 密码记录版本号，便于未来升级算法
+        constexpr int kPasswordIterations = 600000;                        // 迭代次数，约 0.1 秒计算时间
+        constexpr std::size_t kSaltBytes = 16;                             // 16 字节随机盐
+        constexpr std::size_t kHashBytes = 32;                             // 32 字节派生哈希
+        constexpr char kHexDigits[] = "0123456789abcdef";                  // 十六进制字符表
 
+        // 生成安全随机字节数组，使用 OpenSSL RAND_bytes()
         template <std::size_t Size>
         std::array<unsigned char, Size> SecureBytes()
         {
@@ -47,7 +48,7 @@ namespace chat2Data
             }
             return result;
         }
-        // 派生密码哈希，使用 PBKDF2-HMAC-SHA256 算法。
+        // 派生密码哈希，使用 PBKDF2-HMAC-SHA256 算法。该算法需要自己设置迭代次数和盐值，返回固定长度的哈希值。
         std::string DerivePasswordHash(const std::string &password, std::string_view salt)
         {
             std::array<unsigned char, kHashBytes> hash{};
@@ -84,10 +85,10 @@ namespace chat2Data
         return code;
     }
 
-    // 派生密码哈希，使用 PBKDF2-HMAC-SHA256 算法
+    // 派生密码哈希，使用 PBKDF2-HMAC-SHA256 算法，先生成16字节随机盐，再使用盐和迭代次数派生哈希，返回带版本号、盐和哈希的字符串。
     std::string Utils::HashPassword(const std::string &password)
     {
-        //
+        // 返回格式为 "pbkdf2-sha256-v1$<32 字符的盐>$<64 字符的哈希>"
         const auto salt = HexEncode(SecureBytes<kSaltBytes>());
         return std::string(kPasswordVersion) + salt + '$' + DerivePasswordHash(password, salt);
     }
@@ -95,6 +96,7 @@ namespace chat2Data
     // 验证密码是否与记录的哈希匹配，使用 PBKDF2-HMAC-SHA256 算法
     bool Utils::VerifyPassword(const std::string &password, const std::string &record)
     {
+        // 将记录拆分为版本号、盐和哈希，验证格式是否正确，若不正确则返回 false。然后使用盐和迭代次数派生哈希，并与记录中的哈希进行比较。
         constexpr auto separator = kPasswordVersion.size() + 2 * kSaltBytes;
         if (record.size() != separator + 1 + 2 * kHashBytes ||
             record.compare(0, kPasswordVersion.size(), kPasswordVersion) != 0 || record[separator] != '$')

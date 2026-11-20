@@ -23,6 +23,7 @@ namespace chat2Data
         USER_CODE_MISSING,
         USER_NOTIFICATION_FAILED,
         USER_CREDENTIAL_FAILURE,
+        USER_BUSINESS_FAILED,
         // 文件子服务：200～299。
         // 数据库子服务：300～399。
         // Excel 解析子服务：400～499。
