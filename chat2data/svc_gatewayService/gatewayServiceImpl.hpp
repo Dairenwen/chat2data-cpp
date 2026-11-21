@@ -23,9 +23,8 @@ namespace GatewayService
         explicit GatewayServiceImpl(std::shared_ptr<SvcChannels> channels);
 
         /**
-         * @brief 将健康检测和业务占位接口绑定到 HTTP 服务器。
+         * @brief 绑定健康检测、用户接口和其他业务路由。
          * @param server 接收路由绑定的 HTTP 服务器。
-         * @note 健康检测返回服务状态，其余业务接口暂时只保留独立处理函数。
          * @note 路由回调引用当前对象，处理请求期间对象需保持有效。
          */
         void BindRoutes(httplib::Server &server);

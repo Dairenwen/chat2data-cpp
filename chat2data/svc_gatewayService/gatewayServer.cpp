@@ -440,6 +440,9 @@ namespace GatewayService
                                     setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, &enabled, sizeof(enabled)); });
         http->set_read_timeout(300, 0);  // 设置读超时
         http->set_write_timeout(300, 0); // 设置写超时
+        // 挂载静态资源目录，提供前端页面和静态文件访问，如果目录不可用则记录警告日志
+        if (!http->set_mount_point("/", CHAT2DATA_WWWROOT))
+            WRN("网关静态资源目录暂不可用");
         service->BindRoutes(*http);
         return std::unique_ptr<GatewayServer>(new GatewayServer(_address, _port, std::move(http), std::move(service), std::move(discovery)));
     }

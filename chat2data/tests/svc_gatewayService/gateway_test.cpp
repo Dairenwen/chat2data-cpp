@@ -248,16 +248,22 @@ namespace
         EXPECT_LE(body["timestamp"].asInt64(), after + 1);
     }
 
-    TEST_F(GatewayHttpTest, DocumentedBusinessRoutesHavePlaceholders)
+    TEST_F(GatewayHttpTest, FileDatabaseAndAiRoutesHavePlaceholders)
     {
-        // 当前业务接口都是空占位函数；实现业务后应相应更新其响应断言。
+        // 用户路由由联合测试验证，文件、数据库和 AI 路由仍为占位。
         struct Route
         {
             const char *method;
             const char *path;
         };
         const Route routes[] = {
-            {"POST", "/api/user/valid/nickname"}, {"POST", "/api/user/valid/email"}, {"POST", "/api/user/register"}, {"POST", "/api/user/session/login"}, {"POST", "/api/user/passwd/login"}, {"POST", "/api/user/code"}, {"POST", "/api/user/vcode/login"}, {"POST", "/api/user/logout"}, {"GET", "/api/user/info"}, {"POST", "/api/file/upload/info"}, {"GET", "/api/file/info"}, {"POST", "/api/file/upload"}, {"GET", "/api/file/download"}, {"DELETE", "/api/file/test-file"}, {"POST", "/api/file/preview"}, {"POST", "/api/file/list"}, {"POST", "/api/file/chat/map"}, {"POST", "/api/file/sqlite/upload"}, {"POST", "/api/db/connect"}, {"GET", "/api/db/tables"}, {"POST", "/api/db/disconnect"}, {"POST", "/api/db/table/data"}, {"POST", "/api/db/connection/status"}, {"POST", "/api/ai/models"}, {"POST", "/api/ai/session/create"}, {"POST", "/api/ai/chatSessionLists"}, {"POST", "/api/ai/history"}, {"POST", "/api/ai/delete"}, {"POST", "/api/ai/sendStreamMessage"}};
+            {"POST", "/api/file/upload/info"}, {"GET", "/api/file/info"}, {"POST", "/api/file/upload"},
+            {"GET", "/api/file/download"}, {"DELETE", "/api/file/test-file"}, {"POST", "/api/file/preview"},
+            {"POST", "/api/file/list"}, {"POST", "/api/file/chat/map"}, {"POST", "/api/file/sqlite/upload"},
+            {"POST", "/api/db/connect"}, {"GET", "/api/db/tables"}, {"POST", "/api/db/disconnect"},
+            {"POST", "/api/db/table/data"}, {"POST", "/api/db/connection/status"}, {"POST", "/api/ai/models"},
+            {"POST", "/api/ai/session/create"}, {"POST", "/api/ai/chatSessionLists"}, {"POST", "/api/ai/history"},
+            {"POST", "/api/ai/delete"}, {"POST", "/api/ai/sendStreamMessage"}};
         httplib::Client client("127.0.0.1", _port);
         client.set_connection_timeout(1, 0);
         client.set_read_timeout(2, 0);

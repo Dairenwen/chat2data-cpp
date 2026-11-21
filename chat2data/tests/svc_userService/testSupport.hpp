@@ -37,15 +37,27 @@ namespace user_data_test
     inline std::uint64_t NowMs()
     {
         return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
+                                              std::chrono::system_clock::now().time_since_epoch())
+                                              .count());
     }
 
-    // 三类数据访问测试共享连接与隔离数据的准备和清理流程。
+    // 三类数据访问测试共享连接与隔离数据的准备和清理流程
     class DataTestFixture : public ::testing::Test
     {
     protected:
         // 每个测试创建独立连接、MySQL 临时表及 Redis 键前缀。
         void SetUp() override
+        {
+            database = OpenMysql(FLAGS_mysql_database);
+            OpenRedis();
+            ASSERT_NO_FATAL_FAILURE(CreateUserTables(true));
+
+            // 进程 ID 和递增序号组合，避免不同测试使用相同的 Redis 键。
+            static std::atomic<unsigned> sequence{0};
+            prefix = "t" + std::to_string(getpid()) + "-" + std::to_string(sequence++);
+        }
+
+        static std::shared_ptr<odb::database> OpenMysql(const std::string &database_name)
         {
             // 使用 gflags 指定连接信息，默认地址为开发容器内的服务名。
             BreezeODB::mysql_settings mysql;
@@ -53,27 +65,36 @@ namespace user_data_test
             mysql.port = FLAGS_mysql_port;
             mysql.user = FLAGS_mysql_user;
             mysql.passwd = FLAGS_mysql_password;
-            mysql.db = FLAGS_mysql_database;
+            mysql.db = database_name;
             mysql.cset = "utf8mb4";
             mysql.connection_pool_size = 1;
-            database = BreezeODB::DBFactory::mysql(mysql);
+            return BreezeODB::DBFactory::mysql(mysql);
+        }
 
+        void OpenRedis()
+        {
             Breezeredis::redis_settings redisSettings;
             redisSettings.host = FLAGS_redis_host;
             redisSettings.port = FLAGS_redis_port;
             redisSettings.user = FLAGS_redis_user;
             redisSettings.passwd = FLAGS_redis_password;
             redis = Breezeredis::RedisFactory::create(redisSettings);
+        }
 
-            // 临时表仅属于连接池中的当前连接，不修改真实用户表。
+        // 进程内测试使用临时表，跨进程测试在专用数据库中创建普通表。
+        void CreateUserTables(bool temporary)
+        {
             std::ifstream schemaFile(USER_DATA_SCHEMA);
             ASSERT_TRUE(schemaFile.good());
             std::string sql((std::istreambuf_iterator<char>(schemaFile)), std::istreambuf_iterator<char>());
             std::size_t pos = 0;
-            while ((pos = sql.find("CREATE TABLE", pos)) != std::string::npos)
+            if (temporary)
             {
-                sql.replace(pos, 12, "CREATE TEMPORARY TABLE");
-                pos += 22;
+                while ((pos = sql.find("CREATE TABLE", pos)) != std::string::npos)
+                {
+                    sql.replace(pos, 12, "CREATE TEMPORARY TABLE");
+                    pos += 22;
+                }
             }
             odb::transaction transaction(database->begin());
             pos = 0;
@@ -88,10 +109,6 @@ namespace user_data_test
                 pos = end + 1;
             }
             transaction.commit();
-
-            // 进程 ID 和递增序号组合，避免不同测试使用相同的 Redis 键。
-            static std::atomic<unsigned> sequence{0};
-            prefix = "t" + std::to_string(getpid()) + "-" + std::to_string(sequence++);
         }
 
         // 只删除当前测试登记过的 Redis 键；临时表随数据库连接关闭而清理。

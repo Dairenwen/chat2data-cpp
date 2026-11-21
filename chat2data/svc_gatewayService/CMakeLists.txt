@@ -29,7 +29,9 @@ add_executable(gateway_service
 target_compile_features(gateway_service PRIVATE cxx_std_17)
 set_target_properties(gateway_service PROPERTIES CXX_EXTENSIONS OFF)
 target_include_directories(gateway_service PRIVATE "${CPP_HTTPLIB_INCLUDE_DIR}")
-target_link_libraries(gateway_service PRIVATE gateway_breezekit)
+# 网关挂载 wwwroot 下的产物目录
+target_compile_definitions(gateway_service PRIVATE CHAT2DATA_WWWROOT="${CMAKE_CURRENT_SOURCE_DIR}/../wwwroot/dist")
+target_link_libraries(gateway_service PRIVATE gateway_breezekit user_service_proto chat2data_common)
 
 if(BUILD_TESTING)
     find_package(GTest REQUIRED)

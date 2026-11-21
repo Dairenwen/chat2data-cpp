@@ -34,6 +34,7 @@ namespace chat2Data
             // 通知子服务错误描述。
             // AI 子服务错误描述。
             // 网关子服务错误描述。
+            {ErrorCode::GATEWAY_USER_RPC_FAILED, "网关无法调用用户服务"},
         };
 
         const auto it = descriptions.find(error_code);
