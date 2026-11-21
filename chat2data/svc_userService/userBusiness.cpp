@@ -67,9 +67,11 @@ namespace chat2Data
     }
 
     UserBusiness::UserBusiness(std::shared_ptr<SessionManager> sessions, std::shared_ptr<UserData> users,
-                               std::shared_ptr<VerifyCodeData> codes, std::shared_ptr<SvcChannels> channels)
+                               std::shared_ptr<VerifyCodeData> codes, std::shared_ptr<SvcChannels> channels,
+                               std::string notification_service)
         : _sessions(std::move(sessions)), _users(std::move(users)),
-          _codes(std::move(codes)), _channels(std::move(channels))
+          _codes(std::move(codes)), _channels(std::move(channels)),
+          _notification_service(std::move(notification_service))
     {
     }
 
@@ -143,7 +145,7 @@ namespace chat2Data
             throw Chat2DataException(ErrorCode::USER_NOT_FOUND);
 
         // 通知服务的 RPC 调用，若失败则抛出异常。验证码通过邮件发送给用户
-        const auto channel = _channels->getNode("notifyService");
+        const auto channel = _channels->getNode(_notification_service);
         if (!channel)
             throw Chat2DataException(ErrorCode::USER_NOTIFICATION_FAILED);
 

@@ -28,6 +28,22 @@ set_target_properties(user_service_rpc PROPERTIES CXX_EXTENSIONS OFF)
 target_include_directories(user_service_rpc PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" PRIVATE "${BREEZEKIT_SOURCE_DIR}/source")
 target_link_libraries(user_service_rpc PUBLIC user_service_proto PRIVATE user_business BreezeDep::brpc)
 
+# 用户服务入口复用 BreezeKit 的连接工厂、节点注册和服务发现。
+include("${BREEZEKIT_SOURCE_DIR}/cmake/dependencies/etcd.cmake")
+add_executable(user_service
+    main.cpp
+    userServer.cpp
+    userServerBuilder.cpp
+    "${BREEZEKIT_SOURCE_DIR}/source/BreezeEtcd.cpp"
+    "${BREEZEKIT_SOURCE_DIR}/source/BreezeODB.cpp"
+    "${BREEZEKIT_SOURCE_DIR}/source/BreezeRedis.cpp"
+)
+set_target_properties(user_service PROPERTIES CXX_EXTENSIONS OFF)
+target_include_directories(user_service PRIVATE "${BREEZEKIT_SOURCE_DIR}/source")
+target_link_libraries(user_service PRIVATE
+    user_service_rpc user_business BreezeDep::brpc gflags etcd-cpp-api Boost::boost
+)
+
 if(BUILD_TESTING)
     find_package(GTest REQUIRED)
 
@@ -76,7 +92,13 @@ int main(int argc, char **argv)
     add_user_service_test(user_data_test userData_test.cpp user_test_support user_service_rpc user_business BreezeDep::brpc)
     add_user_service_test(session_data_test sessionData_test.cpp user_test_main)
     add_user_service_test(session_manager_test sessionManager_test.cpp user_test_main user_business)
-    add_user_service_test(user_service_impl_test userServiceImpl_test.cpp
-        user_test_main user_service_rpc user_business BreezeDep::brpc)
+    add_user_service_test(user_service_impl_test userServiceImpl_test.cpp user_test_main user_service_rpc user_business BreezeDep::brpc)
     add_user_service_test(verify_code_data_test verifyCodeData_test.cpp user_test_main)
+
+    # 服务端集成测试启动实际的用户服务可执行文件。
+    add_user_service_test(user_server_test userServer_test.cpp
+        user_test_main user_business BreezeDep::brpc user_service_proto etcd-cpp-api)
+    target_compile_definitions(user_server_test PRIVATE USER_SERVICE_EXECUTABLE="$<TARGET_FILE:user_service>")
+    add_dependencies(user_server_test user_service)
+    set_tests_properties(user_server_test PROPERTIES TIMEOUT 90)
 endif()

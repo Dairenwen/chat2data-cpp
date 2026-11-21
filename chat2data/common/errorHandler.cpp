@@ -23,6 +23,11 @@ namespace chat2Data
             {ErrorCode::USER_NOTIFICATION_FAILED, "验证码邮件发送失败"},
             {ErrorCode::USER_CREDENTIAL_FAILURE, "安全凭证处理失败"},
             {ErrorCode::USER_BUSINESS_FAILED, "用户业务处理失败"},
+            {ErrorCode::USER_SERVER_CONFIG_INVALID, "用户服务启动配置无效"},
+            {ErrorCode::USER_ETCD_CONNECTION_FAILED, "无法连接用户服务的 etcd 端点"},
+            {ErrorCode::USER_SERVER_START_FAILED, "用户服务启动失败"},
+            {ErrorCode::USER_SERVICE_DISCOVERY_FAILED, "用户服务发现启动失败"},
+            {ErrorCode::USER_SERVICE_REGISTRATION_FAILED, "用户服务注册失败"},
             // 文件子服务错误描述。
             // 数据库子服务错误描述。
             // Excel 解析子服务错误描述。

@@ -10,6 +10,8 @@ namespace
 {
     using namespace chat2Data;
 
+    constexpr char kTestNotificationService[] = "rpcTestNotification";
+
     // 本地通知节点确认 RPC 请求，供验证码登录流程使用。
     class NotifyReply : public NotifyService
     {
@@ -37,7 +39,7 @@ namespace
             channels = std::make_shared<SvcChannels>();
             const auto sessions = std::make_shared<SessionManager>(std::make_shared<SessionData>(database, redis));
             auto business = std::make_shared<UserBusiness>(
-                sessions, std::make_shared<UserData>(database, redis), codes, channels);
+                sessions, std::make_shared<UserData>(database, redis), codes, channels, kTestNotificationService);
             service = std::make_unique<chat2data::UserServiceImpl>(business);
             ASSERT_EQ(server.AddService(service.get(), brpc::SERVER_DOESNT_OWN_SERVICE), 0);
             ASSERT_EQ(server.Start("127.0.0.1:0", nullptr), 0);
@@ -78,8 +80,9 @@ namespace
         brpc::Server notify_server;
         ASSERT_EQ(notify_server.AddService(&notification, brpc::SERVER_DOESNT_OWN_SERVICE), 0);
         ASSERT_EQ(notify_server.Start("127.0.0.1:0", nullptr), 0);
-        channels->setWatch("notifyService");
-        channels->addNode("notifyService", "127.0.0.1:" + std::to_string(notify_server.listen_address().port));
+        // 使用非默认服务名，验证验证码接口按配置查找通知通道。
+        channels->setWatch(kTestNotificationService);
+        channels->addNode(kTestNotificationService, "127.0.0.1:" + std::to_string(notify_server.listen_address().port));
         const auto email = prefix + "@example.com";
 
         ValidNicknameRequest nickname_request;

@@ -4,9 +4,9 @@
 
 用户子服务负责处理用户相关的业务逻辑，包括昵称和邮箱校验、用户注册、登录、退出登录及获取个人信息，通过 RPC 向网关和其他子服务提供服务。
 
-用户信息和登录会话计划使用 MySQL 存储，并使用 Redis 缓存用户信息、登录会话和邮箱验证码。**服务启动后计划将节点注册到 etcd；发送验证码时，通过通知子服务发送邮件。**
+用户信息和登录会话使用 MySQL 存储，并使用 Redis 缓存用户信息、登录会话和邮箱验证码。用户 RPC 监听成功后将节点注册到 etcd，并通过服务发现取得通知服务节点。
 
-目前已经定义 RPC 协议，实现用户和会话的 ODB 数据库映射、数据访问封装及其测试；**业务处理和 RPC 服务器尚未实现，网关中的用户接口目前也只是路由占位。**
+目前已实现用户和会话的数据访问、用户业务、10 个用户 RPC 及独立启动入口。网关的用户 HTTP 路由与 RPC 的对接和通知服务端属于后续工作。
 
 ## 2. 接口定义
 
@@ -62,7 +62,7 @@ service UserService {
 - `PasswdLoginRequest` 中的字段名为 `nickname`，根据需求，该字段可以填写昵称或注册邮箱。
 - `GetUserInfo` 返回的 `user_info` 包含 `user_id`、`nickname`、`email`，不包含密码哈希。
 - `IsSessionValid` 不单独对应一个用户 HTTP 接口，网关或其他子服务可在处理请求时调用。接口文档只列出了该 RPC 名称，当前协议中的 `valid` 和 `user_id` 是为内部鉴权补充的字段。
-- `error_code` 为 0 表示成功，非 0 表示业务或服务错误；具体用户业务错误码尚待定义。RPC 传输失败还需检查调用状态。
+- `error_code` 为 0 表示成功，非 0 表示业务或服务错误。具体错误码见 [errorHandler.hpp](../../common/errorHandler.hpp)。RPC 传输失败还需检查调用状态。
 - HTTP 的字段和响应格式见[接口设计](../../docs/接口设计.md)，网关需要完成 HTTP 与 RPC 消息之间的转换。
 
 ## 3. 数据库设计
@@ -193,11 +193,11 @@ MySQL 与 Redis 均按原始字节匹配会话 ID。
 
 **注意：** 验证码仅存 Redis，校验和消费需要保证单次使用；键不存在或已过期统一处理。**验证码通过通知子服务发送到邮箱，不在获取验证码的 RPC 响应中返回。**
 
-用户业务通过 `SvcChannels` 选择 `notifyService` 节点，使用 [notifyService.proto](../../proto/notifyService.proto) 的 `SendVerifyCode` 向与输入完全一致的注册邮箱发送验证码。发送失败时删除已写入的验证码并报告失败。验证码登录先原子消费验证码，再核对注册邮箱并创建登录会话。
+用户业务通过 `SvcChannels` 选择 `--watch_service` 指定的通知节点，使用 [notifyService.proto](../../proto/notifyService.proto) 的 `SendVerifyCode` 向与输入完全一致的注册邮箱发送验证码。发送失败时删除已写入的验证码并报告失败。验证码登录先原子消费验证码，再核对注册邮箱并创建登录会话。
 
 ## 5. 实现流程
 
-用户子服务的后续实现流程如下：
+用户子服务的实现流程如下：
 
 1. 编写用户表和登录会话表的 ODB 持久化类，根据数据库设计配置字段和约束，生成数据库访问代码及建表 SQL。
 2. 实现用户表和会话表的数据库操作，以及用户信息、会话和验证码的 Redis 操作。
@@ -209,6 +209,26 @@ MySQL 与 Redis 均按原始字节匹配会话 ID。
 8. 实现网关用户路由与用户服务的 RPC 对接，使用 Google Test 测试用户业务及服务之间的调用。
 
 **注意：** 用户注册需要满足需求文档中的昵称、邮箱唯一性及密码要求。验证码邮件投递依赖部署的通知子服务。
+
+### 5.1 构建和启动用户 RPC
+
+在开发容器的项目目录中执行以下命令。将示例中的密码占位值替换为开发容器的实际配置。
+
+```bash
+cmake -S . -B build
+cmake --build build --target user_service
+./build/svc_userService/user_service --mysql_password='<MySQL 密码>' --redis_password='<Redis 密码>'
+```
+
+程序通过 gflags 读取配置。默认监听端口为 `9001`，注册名称为 `userService`，注册地址由 `dev-env-service` 和监听端口组成。可通过 `--user_port`、`--user_service` 和 `--user_address` 覆盖对应配置。
+
+- `--etcd_address` 用于发现服务，默认为 `http://dev-etcd:2379`。`--registry_address` 用于注册本服务，默认沿用发现地址。
+- `--watch_service` 默认为 `notifyService`。etcd 节点筛选、通道更新和验证码 RPC 查找共用这个服务名。
+- `--mysql_*` 和 `--redis_*` 用于配置连接。开发容器默认使用 `dev-mysql:3306` 和 `dev-redis:6379`。
+
+构建器启动 RPC 监听后加载已有通知节点、开始监听变化，并将本服务发布到注册中心。收到退出信号后停止租约保活，等待在途 RPC 完成。注册记录随租约到期清除。
+
+启动失败时，程序按项目定义记录数字错误码和描述，并以退出状态 `1` 结束。
 
 ## 依赖库及参考代码
 
