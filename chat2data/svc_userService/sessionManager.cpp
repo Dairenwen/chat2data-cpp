@@ -85,7 +85,7 @@ namespace chat2Data
         }
         catch (const sw::redis::Error &)
         {
-            // 删除缓存失败时默认再次尝试，避免影响数据库事务提交。若仍失败则忽略异常。
+            // 删除缓存失败时默认再次尝试，避免影响数据库事务提交。若仍失败则继续抛出。
             _sessions->DeleteCache(sessionId);
         }
     }

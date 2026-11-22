@@ -151,7 +151,7 @@ namespace chat2Data
 
         // 准备好验证码ID、验证码、邮箱和创建时间
         const CachedVerifyCode code{Utils::GenerateSecureId(), Utils::GenerateVerificationCode(), user->email, Utils::NowMs()};
-        if (!_codes->Save(code)) // 写入MySQL
+        if (!_codes->Save(code)) // 写入 Redis，若失败则抛出异常
             throw Chat2DataException(ErrorCode::USER_CODE_MISSING);
 
         SendVerifyCodeRequest request;
