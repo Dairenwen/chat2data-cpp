@@ -1,95 +1,108 @@
+// 入口：启动流程、路由守卫、会话失效统一处理。
+import { QueryClientProvider } from "@tanstack/react-query"
 import { useCallback, useEffect, useState } from "react"
 import { createRoot } from "react-dom/client"
+import { ai } from "./api/ai"
+import { configureClient, errorMessage } from "./api/client"
+import { users } from "./api/users"
 import { AuthPage } from "./AuthPage"
-import { type UserInfo, errorMessage, sessionInvalid, users } from "./api/users"
+import { AppShell } from "./components/AppShell"
 import { Brand } from "./components/Brand"
+import { Toaster } from "./components/Toaster"
 import { Button } from "./components/ui"
+import { queryClient } from "./lib/query"
+import { useHashRoute } from "./lib/router"
+import { applyTheme, useApp } from "./store/app"
+import { toast } from "./store/toast"
 import { Workspace } from "./Workspace"
 import "./styles.css"
 
-const sessionKey = "chat2data.session"
-const themeKey = "chat2data.theme"
+const sessionExpiredText = "登录已失效，请重新登录"
+
+configureClient({
+  getSession: () => useApp.getState().sessionId,
+  // 任何接口返回会话失效：清除本地凭证、跳转登录页并提示。
+  onSessionInvalid: () => {
+    if (!useApp.getState().sessionId) return
+    useApp.getState().clearAuth()
+    queryClient.clear()
+    toast.error(sessionExpiredText)
+  },
+})
+applyTheme(useApp.getState().theme)
 
 function App() {
-  const [savedSession] = useState(() => localStorage.getItem(sessionKey))
-  const [session, setSession] = useState(savedSession)
-  const [user, setUser] = useState<UserInfo>()
-  const [pending, setPending] = useState(Boolean(savedSession))
-  const [error, setError] = useState("")
-  const [dark, setDark] = useState(() => {
-    const theme = localStorage.getItem(themeKey)
-    return theme ? theme === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches
-  })
+  const { sessionId, user, setSession, setUser, clearAuth } = useApp()
+  const { route } = useHashRoute()
+  const [booting, setBooting] = useState(Boolean(sessionId))
+  const [bootError, setBootError] = useState("")
 
-  useEffect(() => {
-    document.documentElement.dataset.theme = dark ? "dark" : "light"
-    localStorage.setItem(themeKey, dark ? "dark" : "light")
-  }, [dark])
-
-  const clearSession = useCallback(() => {
-    localStorage.removeItem(sessionKey)
-    setSession(null)
-    setUser(undefined)
-    setError("")
-  }, [])
-
-  const loadProfile = useCallback(async (sessionId: string, restore: boolean) => {
-    setPending(true)
-    setError("")
+  // 启动：先会话登录，再并行请求用户信息和模型列表；模型列表失败不阻塞进入主页。
+  const enter = useCallback(async (id: string, restore: boolean) => {
+    setBooting(true)
+    setBootError("")
     try {
-      // 从浏览器恢复的会话需要先完成会话登录，再读取用户资料。
-      if (restore) await users.sessionLogin(sessionId)
-      setUser(await users.getInfo(sessionId))
+      if (restore) await users.sessionLogin(id)
+      const [info] = await Promise.all([
+        users.getInfo(),
+        queryClient.fetchQuery({ queryKey: ["models"], queryFn: ai.models }).catch(() => undefined),
+      ])
+      setUser(info)
     } catch (failure) {
-      if (sessionInvalid(failure)) clearSession()
-      else setError(errorMessage(failure))
+      // 会话失效已由请求层统一处理；其余错误允许用户重试。
+      if (useApp.getState().sessionId) setBootError(errorMessage(failure))
     } finally {
-      setPending(false)
+      setBooting(false)
     }
-  }, [clearSession])
+  }, [setUser])
 
   useEffect(() => {
-    if (savedSession) void loadProfile(savedSession, true)
-  }, [savedSession, loadProfile])
+    const saved = useApp.getState().sessionId
+    if (saved) void enter(saved, true)
+  }, [enter])
 
-  function login(sessionId: string) {
-    localStorage.setItem(sessionKey, sessionId)
-    setSession(sessionId)
-    void loadProfile(sessionId, false)
+  function login(id: string) {
+    setSession(id)
+    void enter(id, false)
   }
 
   async function logout() {
-    if (!session) return
-    setPending(true)
-    setError("")
+    const id = useApp.getState().sessionId
     try {
-      await users.logout(session)
-      clearSession()
-    } catch (failure) {
-      if (sessionInvalid(failure)) clearSession()
-      else setError(errorMessage(failure))
-    } finally {
-      setPending(false)
+      if (id) await users.logout(id)
+    } catch {
+      // 服务端退出失败时仍清除本地凭证，避免用户被卡在已登录界面。
     }
+    clearAuth()
+    queryClient.clear()
   }
 
-  const theme = { dark, toggleTheme: () => setDark(!dark) }
-  if (!session) return <AuthPage onLogin={login} {...theme} />
-  if (user) return <Workspace user={user} onLogout={logout} pending={pending} error={error} {...theme} />
-
+  if (!sessionId) return <AuthPage onLogin={login} />
+  if (!user) {
+    return (
+      <main className="grid min-h-dvh place-items-center p-6">
+        <div className="grid justify-items-center gap-4 text-center">
+          <Brand />
+          {booting ? <p role="status" className="text-sm text-muted-foreground">正在验证登录会话…</p> : (
+            <>
+              <p role="alert" className="text-sm text-destructive">{bootError}</p>
+              <Button onClick={() => void enter(sessionId, true)}>重试</Button>
+            </>
+          )}
+        </div>
+      </main>
+    )
+  }
   return (
-    <main className="session-screen">
-      <section>
-        <Brand />
-        {pending ? <p role="status">正在验证登录会话…</p> : (
-          <>
-            <p role="alert" className="form-error">{error}</p>
-            <Button onClick={() => loadProfile(session, true)}>重试</Button>
-          </>
-        )}
-      </section>
-    </main>
+    <AppShell route={route} user={user} onLogout={() => void logout()}>
+      <Workspace route={route} onLogout={() => void logout()} />
+    </AppShell>
   )
 }
 
-createRoot(document.getElementById("root")!).render(<App />)
+createRoot(document.getElementById("root")!).render(
+  <QueryClientProvider client={queryClient}>
+    <App />
+    <Toaster />
+  </QueryClientProvider>,
+)

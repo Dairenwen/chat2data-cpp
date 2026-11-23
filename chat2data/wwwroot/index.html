@@ -4,6 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Chat2Data</title>
+    <script>
+      // 首屏绘制前应用主题，避免亮暗闪烁；存储键与 store 保持一致。
+      try {
+        var theme = localStorage.getItem("chat2data.theme");
+        if (theme === "dark" || (theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches)) {
+          document.documentElement.classList.add("dark");
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>
