@@ -2,6 +2,7 @@ syntax = "proto3";
 package chat2Data;
 option cc_generic_services = true;
 
+// 发送验证码邮件。
 message SendVerifyCodeRequest {
   string request_id = 1;
   string email = 2;
@@ -14,6 +15,30 @@ message SendVerifyCodeResponse {
   string error_msg = 3;
 }
 
+// 发送 HTML 邮件，可附带多个文件。
+message SendEmailRequest {
+  message Attachment {
+    string filename = 1;     // 收件人看到的文件名。
+    bytes data = 2;          // 附件的原始文件字节。
+    string content_type = 3; // MIME 类型，可省略。
+  }
+
+  string request_id = 1;               // 请求 ID。
+  string to_email = 2;                 // 收件人邮箱。
+  string subject = 3;                  // 邮件主题。
+  string content = 4;                  // HTML 正文。
+  repeated Attachment attachments = 5; // 附件列表，可为空。
+}
+
+message SendEmailResponse {
+  string request_id = 1; // 对应的请求 ID。
+  int32 error_code = 2;  // 0 表示邮件发送成功。
+  string error_msg = 3;  // 错误描述。
+}
+
 service NotifyService {
+  // 发送验证码邮件
   rpc SendVerifyCode(SendVerifyCodeRequest) returns (SendVerifyCodeResponse);
+  // 发送普通邮件，可附带文件
+  rpc SendEmail(SendEmailRequest) returns (SendEmailResponse);
 }

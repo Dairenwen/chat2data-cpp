@@ -47,14 +47,14 @@ if(BUILD_TESTING)
     # 网关默认创建 HTTP 工作线程池，串行运行进程级测试以控制资源占用
     gtest_discover_tests(gateway_test DISCOVERY_TIMEOUT 30 PROPERTIES TIMEOUT 90 RESOURCE_LOCK gateway_process)
 
-    # 联合测试在网关模块运行，并复用用户测试的容器连接配置。
+    # 联合测试复用用户测试的容器连接配置，并通过通知协议接收验证码。
     add_executable(gateway_user_test ../tests/svc_gatewayService/gatewayUser_test.cpp)
     set_target_properties(gateway_user_test PROPERTIES CXX_EXTENSIONS OFF)
     target_include_directories(gateway_user_test PRIVATE "${CPP_HTTPLIB_INCLUDE_DIR}")
     target_compile_definitions(gateway_user_test PRIVATE
         GATEWAY_TEST_EXECUTABLE="$<TARGET_FILE:gateway_service>"
         USER_SERVICE_EXECUTABLE="$<TARGET_FILE:user_service>")
-    target_link_libraries(gateway_user_test PRIVATE user_test_main gateway_breezekit user_service_proto)
+    target_link_libraries(gateway_user_test PRIVATE user_test_main gateway_breezekit notify_service_proto)
     add_dependencies(gateway_user_test gateway_service user_service)
     add_test(NAME gateway_user_test COMMAND gateway_user_test)
     set_tests_properties(gateway_user_test PROPERTIES TIMEOUT 60 RESOURCE_LOCK gateway_process)

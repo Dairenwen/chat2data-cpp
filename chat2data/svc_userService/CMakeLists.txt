@@ -17,9 +17,9 @@ add_library(user_business STATIC
 )
 set_target_properties(user_business PROPERTIES CXX_EXTENSIONS OFF)
 target_include_directories(user_business PRIVATE "${BREEZEKIT_SOURCE_DIR}/source")
-# 静态 brpc 的 Protobuf 依赖通过协议库在其后链接。
+# 用户业务通过通知协议发送验证码，协议库放在静态 brpc 之后链接。
 target_link_libraries(user_business PUBLIC user_data PRIVATE
-    BreezeDep::brpc user_service_proto gflags BreezeDep::leveldb
+    BreezeDep::brpc notify_service_proto gflags BreezeDep::leveldb
     OpenSSL::SSL OpenSSL::Crypto ZLIB::ZLIB ${CMAKE_DL_LIBS}
 )
 
@@ -89,10 +89,12 @@ int main(int argc, char **argv)
         add_test(NAME ${target} COMMAND ${target})
     endfunction()
 
-    add_user_service_test(user_data_test userData_test.cpp user_test_support user_service_rpc user_business BreezeDep::brpc)
+    add_user_service_test(user_data_test userData_test.cpp
+        user_test_support user_service_rpc user_business BreezeDep::brpc notify_service_proto)
     add_user_service_test(session_data_test sessionData_test.cpp user_test_main)
     add_user_service_test(session_manager_test sessionManager_test.cpp user_test_main user_business)
-    add_user_service_test(user_service_impl_test userServiceImpl_test.cpp user_test_main user_service_rpc user_business BreezeDep::brpc)
+    add_user_service_test(user_service_impl_test userServiceImpl_test.cpp
+        user_test_main user_service_rpc user_business BreezeDep::brpc notify_service_proto)
     add_user_service_test(verify_code_data_test verifyCodeData_test.cpp user_test_main)
 
     # 服务端集成测试启动实际的用户服务可执行文件。
