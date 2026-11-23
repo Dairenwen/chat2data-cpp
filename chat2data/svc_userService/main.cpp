@@ -1,3 +1,4 @@
+#include "userBusiness.hpp"
 #include "userServer.hpp"
 #include "userServerBuilder.hpp"
 
@@ -31,6 +32,7 @@ DEFINE_string(user_address, "", "注册的 RPC 地址，默认使用 dev-env-ser
 DEFINE_string(etcd_address, "http://dev-etcd:2379", "服务发现使用的 etcd 地址");
 DEFINE_string(registry_address, "", "服务注册使用的 etcd 地址，默认沿用 etcd_address");
 DEFINE_string(watch_service, "notifyService", "监听的通知服务注册名称");
+DEFINE_int32(notify_rpc_timeout_ms, chat2Data::kDefaultNotifyRpcTimeoutMs, "通知 RPC 超时，单位毫秒");
 
 namespace
 {
@@ -90,13 +92,15 @@ int main(int argc, char **argv)
         builder.SetServiceAddress(FLAGS_user_address.empty() ? "dev-env-service:" + std::to_string(FLAGS_user_port) : FLAGS_user_address);
         builder.SetEtcdAddress(FLAGS_etcd_address);
         builder.SetWatchedService(FLAGS_watch_service);
+        builder.SetNotifyRpcTimeout(FLAGS_notify_rpc_timeout_ms);
 
         // 构建器启动监听和服务发现，并在监听成功后发布注册节点。
         auto server = builder.Build();
-        INF("用户 RPC 服务已启动，监听端口为 {}", FLAGS_user_port);
+        INF("RPC 服务已启动，服务名 {}，监听端口 {}", FLAGS_user_service, FLAGS_user_port);
         // 主线程每隔 100 毫秒检查退出标志，收到信号后退出循环
         while (!exit_requested)
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        INF("收到退出信号，正在停止 RPC 服务 {}", FLAGS_user_service);
         return 0;
     }
     catch (const Chat2DataException &error)

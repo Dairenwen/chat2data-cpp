@@ -58,4 +58,17 @@ if(BUILD_TESTING)
     add_dependencies(gateway_user_test gateway_service user_service)
     add_test(NAME gateway_user_test COMMAND gateway_user_test)
     set_tests_properties(gateway_user_test PROPERTIES TIMEOUT 60 RESOURCE_LOCK gateway_process)
+
+    # 验证码联调启动真实通知进程，由本地 SMTP 接收端确认投递结果。
+    add_executable(gateway_user_notify_test ../tests/svc_gatewayService/gatewayUserNotify_test.cpp)
+    set_target_properties(gateway_user_notify_test PROPERTIES CXX_EXTENSIONS OFF)
+    target_include_directories(gateway_user_notify_test PRIVATE "${CPP_HTTPLIB_INCLUDE_DIR}")
+    target_compile_definitions(gateway_user_notify_test PRIVATE
+        GATEWAY_TEST_EXECUTABLE="$<TARGET_FILE:gateway_service>"
+        USER_SERVICE_EXECUTABLE="$<TARGET_FILE:user_service>"
+        NOTIFY_SERVICE_EXECUTABLE="$<TARGET_FILE:notify_service>")
+    target_link_libraries(gateway_user_notify_test PRIVATE user_test_main gateway_breezekit)
+    add_dependencies(gateway_user_notify_test gateway_service user_service notify_service)
+    add_test(NAME gateway_user_notify_test COMMAND gateway_user_notify_test)
+    set_tests_properties(gateway_user_notify_test PROPERTIES TIMEOUT 60 RESOURCE_LOCK gateway_process)
 endif()

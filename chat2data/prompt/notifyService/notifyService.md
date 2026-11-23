@@ -74,7 +74,7 @@ service NotifyService {
 使用带 `Breezecode::MailQueueOptions` 的 `MailClient` 构造函数。**两种邮件进入同一个进程内队列，由单个工作线程按入队顺序发送。**客户端管理任务数据、同步和线程生命周期。两个异步方法均返回本次任务的 `std::future<bool>`。
 
 - BreezeCode 默认限额为 **32 个任务和 512 MiB 邮件负载**，排队和正在发送的任务都计入。单个请求还受 brpc 请求体和 SMTP 邮件大小限制。
-- 每个任务从提交时开始计时，预算覆盖排队和 SMTP 传输。BreezeCode 的默认值为 30 秒。服务的建议默认值为 25 秒，为现有 30 秒 RPC 信道留出处理余量。部署调整时，通知 RPC 超时应覆盖邮件任务预算及返回开销，网关到用户服务的超时还应覆盖用户服务自身处理。见 [BreezeRPC 信道配置](../../../../libSource/cpp-service-kit/source/BreezeRPC.cpp)。
+- 每个任务从提交时开始计时，预算覆盖排队和 SMTP 传输。通知服务的 `--mail_task_timeout_ms` 默认为 25000，用户服务的 `--notify_rpc_timeout_ms` 默认为 30000，网关的 `--get_code_rpc_timeout_ms` 默认为 35000。调整邮件任务预算时，通知 RPC 超时需覆盖邮件任务及返回开销，网关到用户服务的超时还需覆盖用户服务自身处理。
 - RPC 等待每封邮件的发送结果。提交后以单调时钟和任务预算设置等待截止时间，可在 bthread 中用 `wait_for(0)` 查询结果。队列拒绝、任务过期和 SMTP 失败均由客户端返回 `false`。发送链路沿用用户服务的零自动重试策略。
 - 服务退出时先停止接收新 RPC 并等待在途请求，再销毁客户端。BreezeCode 会处理已接收的任务，随后回收后台线程。
 
@@ -113,7 +113,7 @@ service NotifyService {
 | `--registry_address`                                                         | `http://dev-etcd:2379`                        | etcd 注册端点                                    |
 | `--log_level`                                                                | `info`                                        | BreezeLog 日志级别                               |
 | `--smtp_url`                                                                 | 部署配置，例如 `smtps://smtp.example.com:465` | SMTP 连接地址，生产环境使用 TLS 和默认的证书校验 |
-| `--smtp_username`、`--smtp_password`、`--smtp_from`                      | 部署配置                                        | SMTP 登录账号、客户端授权码、发件邮箱            |
+| `--smtp_username`、`--smtp_password`、`--smtp_from`                      | 部署配置，发件邮箱默认沿用 SMTP 登录账号        | SMTP 登录账号、客户端授权码、发件邮箱            |
 | `--smtp_login_options`                                                       | 空值                                            | 按邮件服务商要求设置的认证选项                   |
 | `--mail_html_path`、`--mail_attachment_path`                               | 部署配置，附件路径可留空                        | 验证码模板与固定附件                             |
 | `--mail_max_tasks`、`--mail_max_payload_bytes`、`--mail_task_timeout_ms` | `32`、`536870912`、`25000`                | 队列任务数、总负载字节数和任务时间预算           |

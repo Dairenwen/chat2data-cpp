@@ -3,6 +3,7 @@
 #include "userServerBuilder.hpp"
 
 #include "BreezeEtcd.hpp"
+#include "BreezeLog.hpp"
 #include "errorHandler.hpp"
 #include "userBusiness.hpp"
 #include "userServer.hpp"
@@ -68,9 +69,15 @@ namespace chat2data
         _watched_service = std::move(name);
     }
 
+    void UserServerBuilder::SetNotifyRpcTimeout(int timeout_ms)
+    {
+        _notify_rpc_timeout_ms = timeout_ms;
+    }
+
     std::unique_ptr<UserServer> UserServerBuilder::Build() const
     {
-        if (_port < 1 || _port > 65535)
+        const auto notify_rpc_timeout_ms = _notify_rpc_timeout_ms.value_or(chat2Data::kDefaultNotifyRpcTimeoutMs);
+        if (_port < 1 || _port > 65535 || notify_rpc_timeout_ms <= 0)
             throw Chat2DataException(ErrorCode::USER_SERVER_CONFIG_INVALID);
 
         if (_registry_address.empty() || _etcd_address.empty() || _service_address.empty() ||
@@ -93,19 +100,25 @@ namespace chat2data
             [channels, name = _watched_service](const std::string &service, const std::string &address)
             {
                 if (service == name && !address.empty())
+                {
                     channels->addNode(service, address);
+                    INF("服务上线 {} {}", service, address);
+                }
             },
             [channels, name = _watched_service](const std::string &service, const std::string &address)
             {
                 if (service == name && !address.empty())
+                {
                     channels->delNode(service, address);
+                    INF("服务下线 {} {}", service, address);
+                }
             });
         auto provider = std::make_unique<SvcProvider>(_registry_address, _service_name, _service_address);
         auto sessions = std::make_shared<chat2Data::SessionData>(database, redis);
         auto business = std::make_shared<chat2Data::UserBusiness>(
             std::make_shared<chat2Data::SessionManager>(sessions),
             std::make_shared<chat2Data::UserData>(database, redis),
-            std::make_shared<chat2Data::VerifyCodeData>(redis), channels, _watched_service);
+            std::make_shared<chat2Data::VerifyCodeData>(redis), channels, _watched_service, notify_rpc_timeout_ms);
         auto service = std::make_unique<UserServiceImpl>(std::move(business));
         // 必须在堆上构造 UserServer 对象
         auto server = std::unique_ptr<UserServer>(
@@ -114,10 +127,12 @@ namespace chat2data
         // 先确认监听成功，再注册本节点，避免发布无法连接的地址。
         if (!server->start())
             throw Chat2DataException(ErrorCode::USER_SERVER_START_FAILED);
+        INF("启动服务发现，监听服务 {}", _watched_service);
         if (!server->_watcher->watch())
             throw Chat2DataException(ErrorCode::USER_SERVICE_DISCOVERY_FAILED);
         if (!server->_provider->registry())
             throw Chat2DataException(ErrorCode::USER_SERVICE_REGISTRATION_FAILED);
+        INF("RPC 服务已注册，服务名 {}，节点地址 {}", _service_name, _service_address);
         return server;
     }
 }

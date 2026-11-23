@@ -4,6 +4,7 @@
 #include "BreezeRedis.hpp"
 
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace chat2data
@@ -25,6 +26,7 @@ namespace chat2data
         void SetServiceAddress(std::string address);
         void SetEtcdAddress(std::string address);
         void SetWatchedService(std::string name);
+        void SetNotifyRpcTimeout(int timeout_ms);
 
         /**
          * @brief 构造数据库、业务和 RPC 实例，启动发现及监听后注册节点。
@@ -42,5 +44,6 @@ namespace chat2data
         std::string _service_address;
         std::string _etcd_address;
         std::string _watched_service;
+        std::optional<int> _notify_rpc_timeout_ms;
     };
 }

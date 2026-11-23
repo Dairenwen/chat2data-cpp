@@ -42,6 +42,7 @@ namespace chat2data
             auto code = ErrorCode::NOTIFY_INVALID_INPUT;
             if (!request.request_id().empty())
             {
+                INF("RPC {} 开始处理，请求 ID {}", method, request.request_id());
                 try
                 {
                     code = WaitForSend(submit(), timeout);
@@ -63,7 +64,9 @@ namespace chat2data
             response.set_error_msg(code == ErrorCode::SUCCESS ? "" : chat2Data::error2String(code));
             // 通过方法、请求 ID 和错误码定位问题，邮件内容仅用于投递。
             if (code != ErrorCode::SUCCESS)
-                WRN("通知 RPC {} 请求 ID {}，错误码 {}", method, request.request_id(), static_cast<int>(code));
+                WRN("RPC {} 失败，请求 ID {}，错误码 {}", method, request.request_id(), static_cast<int>(code));
+            else
+                INF("RPC {} 成功，请求 ID {}", method, request.request_id());
         }
     }
 

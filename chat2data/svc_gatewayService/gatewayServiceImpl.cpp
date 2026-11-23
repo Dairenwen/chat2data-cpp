@@ -13,6 +13,7 @@
 #include <utility>
 
 DECLARE_string(user_service);
+DECLARE_int32(get_code_rpc_timeout_ms);
 
 namespace GatewayService
 {
@@ -65,11 +66,13 @@ namespace GatewayService
         // 每次 RPC 只发一次，避免重复注册、创建会话或发送验证码。
         template <typename Request, typename Response>
         bool CallUser(UserService_Stub &stub, UserMethod<Request, Response> method,
-                      const Request &request, Response &result, httplib::Response &http_response)
+                      const Request &request, Response &result, httplib::Response &http_response, int timeout_ms = -1)
         {
             brpc::Controller controller;
-            controller.set_max_retry(0);                             // 禁止重试，避免重复注册、创建会话或发送验证码
-            (stub.*method)(&controller, &request, &result, nullptr); // 发起 RPC 调用
+            if (timeout_ms > 0) // 设置的超时是为通知服务的 RPC 调用提供的预算
+                controller.set_timeout_ms(timeout_ms);
+            controller.set_max_retry(0);                             // 默认不重试，避免重复注册、创建会话或发送验证码
+            (stub.*method)(&controller, &request, &result, nullptr); // 调用 RPC 方法
             if (!controller.Failed() && result.request_id() == request.request_id())
                 return true;
 
@@ -113,14 +116,15 @@ namespace GatewayService
          * @param has_fields 是否校验 request 存在有效字段（可选业务校验标记）
          * @param method UserService_Stub 的成员函数指针，指向具体 RPC 方法
          * @param make_result 回调函数，将 RPC Response 转为 Json::Value；为空时使用默认组装逻辑
-         * @param session_id 会话ID，可选，用于链路追踪/登录态传递，可为 nullptr
+         * @param session_id 可选会话 ID，提供时先校验会话。
+         * @param timeout_ms RPC 超时，默认沿用信道设置。
          */
         template <typename Request, typename Response>
         void ForwardUser(SvcChannels &channels, httplib::Response &response,
                          const Request &request, bool has_fields,
                          UserMethod<Request, Response> method,
                          Json::Value (*make_result)(const Response &) = nullptr,
-                         const std::string *session_id = nullptr)
+                         const std::string *session_id = nullptr, int timeout_ms = -1)
         {
             const auto &request_id = request.request_id();
             // 若请求体缺少必要字段，则返回 400 错误
@@ -143,7 +147,7 @@ namespace GatewayService
                 return;
             // 发起 RPC 调用，若失败则返回 502 错误
             Response result;
-            if (!CallUser(stub, method, request, result, response))
+            if (!CallUser(stub, method, request, result, response, timeout_ms))
                 return;
             // 将 RPC 调用结果封装为 JSON 对象，若调用成功且提供了结果转换函数，则调用该函数生成结果对象
             Json::Value data;
@@ -161,7 +165,7 @@ namespace GatewayService
             return data;
         }
 
-        // 将验证码信息封装为 JSON 对象
+        // HTTP 响应只携带验证码 ID，验证码由通知服务通过邮件交付。
         Json::Value CodeResult(const chat2Data::GetCodeResponse &response)
         {
             Json::Value data(Json::objectValue);
@@ -324,8 +328,8 @@ namespace GatewayService
         chat2Data::GetCodeRequest rpc;
         rpc.set_request_id(ReadString(body, "requestId"));
         rpc.set_email(ReadString(body, "email"));
-        // GetVerificationCode 需要返回验证码
-        ForwardUser(*_channels, response, rpc, !rpc.email().empty(), &UserService_Stub::GetCode, CodeResult);
+        // 超时覆盖用户服务等待 SMTP 投递结果及处理 Redis 记录的时间
+        ForwardUser(*_channels, response, rpc, !rpc.email().empty(), &UserService_Stub::GetCode, CodeResult, nullptr, FLAGS_get_code_rpc_timeout_ms);
     }
 
     void GatewayServiceImpl::VerificationCodeLogin(const httplib::Request &request, httplib::Response &response)

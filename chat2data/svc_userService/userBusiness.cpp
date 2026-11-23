@@ -1,5 +1,6 @@
 #include "userBusiness.hpp"
 
+#include "BreezeLog.hpp"
 #include "BreezeRPC.hpp"
 #include "errorHandler.hpp"
 #include "notifyService.pb.h"
@@ -68,10 +69,10 @@ namespace chat2Data
 
     UserBusiness::UserBusiness(std::shared_ptr<SessionManager> sessions, std::shared_ptr<UserData> users,
                                std::shared_ptr<VerifyCodeData> codes, std::shared_ptr<SvcChannels> channels,
-                               std::string notification_service)
+                               std::string notification_service, int notify_rpc_timeout_ms)
         : _sessions(std::move(sessions)), _users(std::move(users)),
           _codes(std::move(codes)), _channels(std::move(channels)),
-          _notification_service(std::move(notification_service))
+          _notification_service(std::move(notification_service)), _notify_rpc_timeout_ms(notify_rpc_timeout_ms)
     {
     }
 
@@ -136,7 +137,7 @@ namespace chat2Data
         return CreateLoginSession(user->userId);
     }
 
-    // 使用邮箱和验证码登录，验证码在五分钟内有效
+    // SMTP 确认接收邮件后返回验证码 ID。
     std::string UserBusiness::GetCode(const std::string &requestId, const std::string &email)
     {
         ValidateEmail(email);
@@ -144,10 +145,12 @@ namespace chat2Data
         if (!user || user->email != email)
             throw Chat2DataException(ErrorCode::USER_NOT_FOUND);
 
-        // 通知服务的 RPC 调用，若失败则抛出异常。验证码通过邮件发送给用户
         const auto channel = _channels->getNode(_notification_service);
         if (!channel)
+        {
+            WRN("RPC SendVerifyCode 暂无可用节点，请求 ID {}，目标服务 {}", requestId, _notification_service);
             throw Chat2DataException(ErrorCode::USER_NOTIFICATION_FAILED);
+        }
 
         // 准备好验证码ID、验证码、邮箱和创建时间
         const CachedVerifyCode code{Utils::GenerateSecureId(), Utils::GenerateVerificationCode(), user->email, Utils::NowMs()};
@@ -160,11 +163,17 @@ namespace chat2Data
         request.set_verify_code(code.verifyCode);
         SendVerifyCodeResponse response;
         brpc::Controller controller;
-        controller.set_max_retry(0); // 禁止自动重试，避免重复投递验证码邮件
-        // 正式调用通知子服务的 SendVerifyCode RPC 接口，若失败则删除验证码并抛出异常
+        // 等待预算覆盖邮件队列和 SMTP 确认，单次调用防止重复投递。
+        controller.set_timeout_ms(_notify_rpc_timeout_ms);
+        controller.set_max_retry(0); // 默认不重试，避免重复投递验证码
+        // 调用通知子服务中的异步投递接口，若失败则删除验证码并抛出异常
+        INF("转发 RPC SendVerifyCode，请求 ID {}，目标服务 {}", requestId, _notification_service);
         NotifyService_Stub(channel.get()).SendVerifyCode(&controller, &request, &response, nullptr);
-        if (controller.Failed() || response.error_code() != 0 || response.request_id() != requestId)
+        if (controller.Failed() || response.error_code() != static_cast<int>(ErrorCode::SUCCESS) ||
+            response.request_id() != requestId)
         {
+            WRN("RPC SendVerifyCode 请求失败，请求 ID {}，传输错误码 {}，通知错误码 {}，响应 ID 匹配 {}",
+                requestId, controller.ErrorCode(), response.error_code(), response.request_id() == requestId);
             _codes->Delete(code.codeId);
             throw Chat2DataException(ErrorCode::USER_NOTIFICATION_FAILED);
         }

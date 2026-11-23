@@ -18,7 +18,8 @@ namespace chat2data
 
         // 这里使用模板方法模式封装 RPC 处理流程，避免重复的异常捕获和响应字段设置
         template <typename Request, typename Response, typename Operation>
-        void HandleUserRpc(const Request *request, Response *response, Closure *done, Operation operation)
+        void HandleUserRpc(const Request *request, Response *response, Closure *done,
+                           const char *method, Operation operation)
         {
             // 正常返回和异常处理路径均通过 ClosureGuard 完成 RPC 响应。
             brpc::ClosureGuard guard(done);
@@ -50,7 +51,10 @@ namespace chat2data
             {
                 response->Clear();
                 response->set_error_msg(chat2Data::error2String(code));
+                WRN("RPC {} 失败，请求 ID {}，错误码 {}", method, request->request_id(), static_cast<int>(code));
             }
+            else
+                INF("RPC {} 成功，请求 ID {}", method, request->request_id());
             response->set_request_id(request->request_id());
             response->set_error_code(static_cast<int>(code));
         }
@@ -64,7 +68,7 @@ namespace chat2data
     void UserServiceImpl::ValidNickname(RpcController *, const chat2Data::ValidNicknameRequest *request,
                                         chat2Data::ValidNicknameResponse *response, Closure *done)
     {
-        HandleUserRpc(request, response, done, [&]
+        HandleUserRpc(request, response, done, "ValidNickname", [&]
                       {
             // 校验必填昵称，格式规则由业务层统一处理。
             if (request->nickname().empty())
@@ -77,7 +81,7 @@ namespace chat2data
     void UserServiceImpl::ValidEmail(RpcController *, const chat2Data::ValidEmailRequest *request,
                                      chat2Data::ValidEmailResponse *response, Closure *done)
     {
-        HandleUserRpc(request, response, done, [&]
+        HandleUserRpc(request, response, done, "ValidEmail", [&]
                       {
             // 校验必填邮箱，格式规则由业务层统一处理。
             if (request->email().empty())
@@ -90,7 +94,7 @@ namespace chat2data
     void UserServiceImpl::UserRegister(RpcController *, const chat2Data::UserRegisterRequest *request,
                                        chat2Data::UserRegisterResponse *response, Closure *done)
     {
-        HandleUserRpc(request, response, done, [&]
+        HandleUserRpc(request, response, done, "UserRegister", [&]
                       {
             // 校验注册所需字段，密码规则和唯一性由业务层处理。
             if (request->nickname().empty() || request->email().empty() || request->password().empty())
@@ -104,7 +108,7 @@ namespace chat2data
     void UserServiceImpl::SessionLogin(RpcController *, const chat2Data::SessionLoginRequest *request,
                                        chat2Data::SessionLoginResponse *response, Closure *done)
     {
-        HandleUserRpc(request, response, done, [&]
+        HandleUserRpc(request, response, done, "SessionLogin", [&]
                       {
             // 会话 ID 用于定位已有会话。
             if (request->session_id().empty())
@@ -118,7 +122,7 @@ namespace chat2data
     void UserServiceImpl::PasswdLogin(RpcController *, const chat2Data::PasswdLoginRequest *request,
                                       chat2Data::PasswdLoginResponse *response, Closure *done)
     {
-        HandleUserRpc(request, response, done, [&]
+        HandleUserRpc(request, response, done, "PasswdLogin", [&]
                       {
             // nickname 字段承载昵称或邮箱，登录还需提供密码。
             if (request->nickname().empty() || request->password().empty())
@@ -132,7 +136,7 @@ namespace chat2data
     void UserServiceImpl::GetCode(RpcController *, const chat2Data::GetCodeRequest *request,
                                   chat2Data::GetCodeResponse *response, Closure *done)
     {
-        HandleUserRpc(request, response, done, [&]
+        HandleUserRpc(request, response, done, "GetCode", [&]
                       {
             // 邮箱用于定位验证码的接收地址。
             if (request->email().empty())
@@ -146,7 +150,7 @@ namespace chat2data
     void UserServiceImpl::VcodeLogin(RpcController *, const chat2Data::VcodeLoginRequest *request,
                                      chat2Data::VcodeLoginResponse *response, Closure *done)
     {
-        HandleUserRpc(request, response, done, [&]
+        HandleUserRpc(request, response, done, "VcodeLogin", [&]
                       {
             // 按六位数字字符串校验验证码，保留前导零。
             const auto &code = request->verify_code();
@@ -162,7 +166,7 @@ namespace chat2data
     void UserServiceImpl::Logout(RpcController *, const chat2Data::LogoutRequest *request,
                                  chat2Data::LogoutResponse *response, Closure *done)
     {
-        HandleUserRpc(request, response, done, [&]
+        HandleUserRpc(request, response, done, "Logout", [&]
                       {
             // 会话 ID 用于撤销当前设备的会话。
             if (request->session_id().empty())
@@ -176,7 +180,7 @@ namespace chat2data
     void UserServiceImpl::GetUserInfo(RpcController *, const chat2Data::GetUserInfoRequest *request,
                                       chat2Data::GetUserInfoResponse *response, Closure *done)
     {
-        HandleUserRpc(request, response, done, [&]
+        HandleUserRpc(request, response, done, "GetUserInfo", [&]
                       {
             // 会话 ID 用于确认请求对应的用户。
             if (request->session_id().empty())
@@ -194,7 +198,7 @@ namespace chat2data
     void UserServiceImpl::IsSessionValid(RpcController *, const chat2Data::IsSessionValidRequest *request,
                                          chat2Data::IsSessionValidResponse *response, Closure *done)
     {
-        HandleUserRpc(request, response, done, [&]
+        HandleUserRpc(request, response, done, "IsSessionValid", [&]
                       {
             // 校验请求携带用于内部鉴权的会话 ID。
             if (request->session_id().empty())

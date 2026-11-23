@@ -1,6 +1,7 @@
 #include "notifyServer.hpp"
 
 #include "BreezeEtcd.hpp"
+#include "BreezeLog.hpp"
 #include "errorHandler.hpp"
 #include "notifyBusiness.hpp"
 #include "notifyServiceImpl.hpp"
@@ -112,6 +113,7 @@ namespace chat2data
             _config.registry_address, _config.service_name, _config.service_address);
         if (!server->_provider->registry())
             throw Chat2DataException(ErrorCode::NOTIFY_SERVICE_REGISTRATION_FAILED);
+        INF("RPC 服务已注册，服务名 {}，节点地址 {}", _config.service_name, _config.service_address);
         return server;
     }
 }

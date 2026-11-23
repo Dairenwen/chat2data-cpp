@@ -10,6 +10,9 @@ class SvcChannels;
 
 namespace chat2Data
 {
+    // 用户服务的默认等待通知 RPC 响应的时间，覆盖邮件任务预算
+    inline constexpr int kDefaultNotifyRpcTimeoutMs = 30000;
+
     // 用户信息接口对外返回的字段。
     struct PublicUserInfo
     {
@@ -29,10 +32,12 @@ namespace chat2Data
          * @param codes 验证码数据访问对象。
          * @param channels 用于选择通知服务节点的 RPC 通道集合。
          * @param notification_service 通知节点在通道集合中的服务名称。
+         * @param notify_rpc_timeout_ms 等待通知 RPC 响应的时间，覆盖邮件任务预算。
          */
         UserBusiness(std::shared_ptr<SessionManager> sessions, std::shared_ptr<UserData> users,
                      std::shared_ptr<VerifyCodeData> codes, std::shared_ptr<SvcChannels> channels,
-                     std::string notification_service = "notifyService");
+                     std::string notification_service = "notifyService",
+                     int notify_rpc_timeout_ms = kDefaultNotifyRpcTimeoutMs);
 
         /**
          * @brief 校验昵称并查询当前可用性。
@@ -111,5 +116,6 @@ namespace chat2Data
         std::shared_ptr<VerifyCodeData> _codes;
         std::shared_ptr<SvcChannels> _channels;
         std::string _notification_service;
+        int _notify_rpc_timeout_ms;
     };
 }

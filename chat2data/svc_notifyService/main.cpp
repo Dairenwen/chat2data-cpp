@@ -17,7 +17,7 @@ DEFINE_string(log_level, "info", "BreezeLog 日志级别");
 DEFINE_string(smtp_url, "smtps://smtp.qq.com:465", "SMTP 服务器地址");
 DEFINE_string(smtp_username, "3484725023@qq.com", "SMTP 登录账号");
 DEFINE_string(smtp_password, "lshcqpcfdmilchjj", "SMTP 客户端授权码");
-DEFINE_string(smtp_from, "3484725023@qq.com", "发件邮箱");
+DEFINE_string(smtp_from, "3484725023@qq.com", "发件邮箱，默认沿用 SMTP 登录账号");
 DEFINE_string(smtp_login_options, "AUTH=LOGIN", "SMTP 认证选项");
 DEFINE_string(mail_html_path, NOTIFY_DEFAULT_MAIL_TEMPLATE, "验证码邮件 HTML 模板路径");
 DEFINE_uint32(mail_max_tasks, 32, "邮件队列最大任务数");
@@ -61,7 +61,7 @@ int main(int argc, char **argv)
         config.mail.username = FLAGS_smtp_username;
         config.mail.password = FLAGS_smtp_password;
         config.mail.url = FLAGS_smtp_url;
-        config.mail.from = FLAGS_smtp_from;
+        config.mail.from = FLAGS_smtp_from.empty() ? FLAGS_smtp_username : FLAGS_smtp_from;
         config.mail.login_options = FLAGS_smtp_login_options;
         config.mail.html_path = FLAGS_mail_html_path;
 
@@ -74,10 +74,11 @@ int main(int argc, char **argv)
         std::signal(SIGTERM, HandleSignal);
         // Build 完成 RPC 监听和 etcd 注册后，服务进入运行状态。
         auto server = chat2data::NotifyServerBuilder(std::move(config)).Build();
-        INF("通知 RPC 服务已启动，监听端口为 {}", FLAGS_notify_port);
+        INF("RPC 服务已启动，服务名 {}，监听端口 {}", FLAGS_notify_service, FLAGS_notify_port);
         // 主线程保留服务的所有权，退出作用域时按顺序回收注册、RPC 和邮件资源。
         while (!exit_requested)
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        INF("收到退出信号，正在停止 RPC 服务 {}", FLAGS_notify_service);
         return 0;
     }
     catch (const Chat2DataException &error)

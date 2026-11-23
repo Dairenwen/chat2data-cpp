@@ -12,6 +12,7 @@ DEFINE_string(gateway_address, "0.0.0.0", "网关监听地址");
 DEFINE_int32(gateway_port, 9000, "网关监听端口");
 DEFINE_string(etcd_address, "http://dev-etcd:2379", "etcd 地址");
 DEFINE_string(user_service, "userService", "用户服务名称");
+DEFINE_int32(get_code_rpc_timeout_ms, 35000, "获取验证码的用户 RPC 超时，单位毫秒");
 DEFINE_string(file_service, "fileService", "文件服务名称");
 DEFINE_string(db_service, "dbService", "数据库服务名称");
 DEFINE_string(ai_service, "aiService", "AI 服务名称");
@@ -45,6 +46,11 @@ int main(int argc, char **argv)
     if (FLAGS_gateway_port < 1 || FLAGS_gateway_port > 65535)
     {
         ERR("无效的网关端口: {}", FLAGS_gateway_port);
+        return 1;
+    }
+    if (FLAGS_get_code_rpc_timeout_ms <= 0)
+    {
+        ERR("获取验证码的 RPC 超时需要为正数");
         return 1;
     }
     std::signal(SIGINT, HandleSignal);
