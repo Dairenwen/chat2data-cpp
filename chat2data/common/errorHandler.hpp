@@ -33,6 +33,15 @@ namespace chat2Data
         // 数据库子服务：300～399。
         // Excel 解析子服务：400～499。
         // 通知子服务：500～599。
+        NOTIFY_INVALID_INPUT = 500,
+        NOTIFY_SEND_FAILED,
+        NOTIFY_SEND_TIMEOUT,
+        NOTIFY_BUSINESS_FAILED,
+        NOTIFY_SERVER_CONFIG_INVALID,
+        NOTIFY_TEMPLATE_UNREADABLE,
+        NOTIFY_ETCD_CONNECTION_FAILED,
+        NOTIFY_SERVER_START_FAILED,
+        NOTIFY_SERVICE_REGISTRATION_FAILED,
         // AI 子服务：600～699。
         // 网关子服务：700～799。
         GATEWAY_USER_RPC_FAILED = 700,

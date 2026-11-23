@@ -32,6 +32,15 @@ namespace chat2Data
             // 数据库子服务错误描述。
             // Excel 解析子服务错误描述。
             // 通知子服务错误描述。
+            {ErrorCode::NOTIFY_INVALID_INPUT, "通知请求参数无效"},
+            {ErrorCode::NOTIFY_SEND_FAILED, "邮件发送失败"},
+            {ErrorCode::NOTIFY_SEND_TIMEOUT, "等待邮件发送结果超时"},
+            {ErrorCode::NOTIFY_BUSINESS_FAILED, "通知业务处理失败"},
+            {ErrorCode::NOTIFY_SERVER_CONFIG_INVALID, "通知服务启动配置无效"},
+            {ErrorCode::NOTIFY_TEMPLATE_UNREADABLE, "无法读取验证码邮件模板"},
+            {ErrorCode::NOTIFY_ETCD_CONNECTION_FAILED, "无法连接通知服务的 etcd 端点"},
+            {ErrorCode::NOTIFY_SERVER_START_FAILED, "通知服务启动失败"},
+            {ErrorCode::NOTIFY_SERVICE_REGISTRATION_FAILED, "通知服务注册失败"},
             // AI 子服务错误描述。
             // 网关子服务错误描述。
             {ErrorCode::GATEWAY_USER_RPC_FAILED, "网关无法调用用户服务"},
