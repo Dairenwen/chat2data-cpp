@@ -1,0 +1,57 @@
+syntax = "proto3";
+package chat2Data.excelParseService;
+option cc_generic_services = true;
+
+message GetWorksheetsRequest {
+  string request_id = 1;    // 请求 ID
+  string fdfs_file_id = 2;   // FastDFS 文件 ID
+}
+
+message GetWorksheetsResponse {
+  string request_id = 1;           // 对应的请求 ID
+  int32 error_code = 2;             // 0 表示成功
+  string error_msg = 3;             // 错误描述
+  repeated string worksheets = 4;  // 按工作簿顺序排列的工作表名称
+}
+
+message ParseExcelRequest {
+  string request_id = 1;          // 请求 ID
+  string fdfs_file_id = 2;         // FastDFS 文件 ID
+  repeated string worksheets = 3; // 待解析的工作表名称，至少一项
+}
+
+message ColumnInfo {
+  string name = 1;  // 规范化后的列名
+  string type = 2;  // 推断的列类型，取 TEXT、BIGINT、DOUBLE、BOOLEAN 或 DATE
+}
+
+message CellData {
+  string value = 1; // 单元格的文本表示
+  string type = 2;  // 原始类型，取 Empty、Integer、Float、Boolean、String 或 Error
+}
+
+message RowData {
+  repeated CellData cells = 1; // 按列顺序排列，保留空单元格
+}
+
+message WorksheetData {
+  string name = 1;                 // 工作表名称
+  repeated ColumnInfo columns = 2; // 按工作表列顺序排列的列信息
+  repeated RowData rows = 3;        // 从工作表第二行开始的数据
+  int32 total_rows = 4;             // 工作表总行数，包含第一行表头
+  int32 total_cols = 5;             // 工作表列数
+}
+
+message ParseExcelResponse {
+  string request_id = 1;                // 对应的请求 ID
+  int32 error_code = 2;                  // 0 表示成功
+  string error_msg = 3;                  // 错误描述
+  repeated WorksheetData worksheets = 4; // 按请求顺序排列的解析结果，失败时为空
+}
+
+service ExcelParserService {
+  // 获取 Excel 文件的工作表列表
+  rpc GetWorksheets(GetWorksheetsRequest) returns (GetWorksheetsResponse);
+  // 解析 Excel 文件的指定工作表
+  rpc ParseExcel(ParseExcelRequest) returns (ParseExcelResponse);
+}

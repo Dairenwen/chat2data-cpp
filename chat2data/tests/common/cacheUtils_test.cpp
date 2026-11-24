@@ -27,6 +27,7 @@ namespace
         redis->del(key);
         redis->hset(key, "other", "value");
         EXPECT_THROW(chat2Data::Utils::ReadCache(*redis, key), chat2Data::Chat2DataException);
+        EXPECT_TRUE(chat2Data::Utils::ParseCacheJson("{}").isObject());
         EXPECT_THROW(chat2Data::Utils::ParseCacheJson("[]"), chat2Data::Chat2DataException);
     }
 

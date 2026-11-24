@@ -28,7 +28,7 @@
 5. **服务器在新线程中启动，防止阻塞主线程。**
 6. 各个方法在实现时，必须添加**日志记录**，记录程序的执行流程、状态以及异常情况。
 7. 服务器中需要包含接口定义实例和服务器实例，在构造方法中完成初始化。
-8. 服务器类名称为 `GatewayServer`，包含在 `GatewayService` 命名空间中。
+8. 服务器类名称为 `GatewayServer`，包含在 `chat2data` 命名空间中。
 9. 头文件名称为 `gatewayServer.hpp`，源文件名称为 `gatewayServer.cpp`。
 
 ## 五、HTTP 接口实现要求
@@ -38,7 +38,7 @@
 3. **仅健康检测接口需要实现**，响应格式遵循接口设计；其余接口绑定占位处理并返回 HTTP `501 Not Implemented`，不返回业务成功。
 4. 向外提供路由绑定接口，使网关服务器能够在启动前完成路由绑定。
 5. 需要持有服务信道管理对象 `SvcChannels`，便于后续接口通过服务名称获取 RPC Channel；服务发现由 `SvcWatcher` 负责。
-6. 类名称为 `GatewayServiceImpl`，包含在 `GatewayService` 命名空间中。
+6. 类名称为 `GatewayServiceImpl`，包含在 `chat2data` 命名空间中。
 7. 头文件名称为 `gatewayServiceImpl.hpp`，源文件名称为 `gatewayServiceImpl.cpp`。
 
 ## 六、网关服务器构建器实现要求

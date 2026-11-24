@@ -4,6 +4,7 @@
 
 #include "BreezeLog.hpp"
 #include "errorHandler.hpp"
+#include "utils.hpp"
 
 #include <chrono>
 #include <csignal>
@@ -49,6 +50,7 @@ int main(int argc, char **argv)
 {
     using chat2Data::Chat2DataException;
     using chat2Data::ErrorCode;
+    using chat2Data::Utils;
 
     gflags::ParseCommandLineFlags(&argc, &argv, true);
     ErrorCode startup_error;
@@ -59,8 +61,8 @@ int main(int argc, char **argv)
             throw Chat2DataException(ErrorCode::USER_SERVER_CONFIG_INVALID);
         BreezeLog::Logger::setLevel(level);
 
-        if (FLAGS_mysql_port == 0 || FLAGS_mysql_port > 65535 || FLAGS_mysql_pool_size == 0 ||
-            FLAGS_redis_port < 1 || FLAGS_redis_port > 65535 || FLAGS_redis_pool_size == 0 || FLAGS_redis_db < 0)
+        if (!Utils::IsValidPort(FLAGS_mysql_port) || FLAGS_mysql_pool_size == 0 ||
+            !Utils::IsValidPort(FLAGS_redis_port) || FLAGS_redis_pool_size == 0 || FLAGS_redis_db < 0)
             throw Chat2DataException(ErrorCode::USER_SERVER_CONFIG_INVALID);
 
         chat2data::MysqlConfig mysql;

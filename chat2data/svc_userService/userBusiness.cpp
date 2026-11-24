@@ -34,14 +34,9 @@ namespace chat2Data
                 throw Chat2DataException(ErrorCode::USER_INVALID_INPUT);
         }
 
-        // 邮箱格式校验，长度、@位置、空白字符和控制字符
         void ValidateEmail(const std::string &email)
         {
-            const auto at = email.find('@');
-            if (email.size() > 255 || at == std::string::npos || at == 0 || at + 1 == email.size() ||
-                email.find('@', at + 1) != std::string::npos ||
-                std::any_of(email.begin(), email.end(), [](unsigned char ch)
-                            { return std::isspace(ch) || std::iscntrl(ch); }))
+            if (!Utils::IsValidEmail(email))
                 throw Chat2DataException(ErrorCode::USER_INVALID_INPUT);
         }
 

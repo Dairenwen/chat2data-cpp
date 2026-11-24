@@ -1,6 +1,6 @@
 // SSE 流式封装：sendStreamMessage 是 POST 请求，使用 fetch-event-source 解析。
 import { fetchEventSource } from "@microsoft/fetch-event-source"
-import { ApiError, getSessionId, isSessionInvalid, newRequestId, reportSessionInvalid, unavailableError } from "./client"
+import { ApiError, getSessionId, isSessionInvalid, isUnavailableReply, newRequestId, reportSessionInvalid, unavailableError } from "./client"
 
 const path = "/api/ai/sendStreamMessage"
 
@@ -27,7 +27,7 @@ function businessError(code: number, message: string, status: number) {
 
 async function openError(response: Response) {
   const text = await response.text()
-  if (response.status === 404 || (response.ok && !text.trim())) return unavailableError(path, response.status)
+  if (isUnavailableReply(response, text)) return unavailableError(path, response.status)
   try {
     const reply = JSON.parse(text)
     if (Number.isInteger(reply.errorCode) && reply.errorCode !== 0) {

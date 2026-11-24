@@ -5,6 +5,7 @@
 #include "errorHandler.hpp"
 #include "notifyBusiness.hpp"
 #include "notifyServiceImpl.hpp"
+#include "utils.hpp"
 
 #include <brpc/server.h>
 #include <charconv>
@@ -17,11 +18,7 @@ namespace chat2data
     {
         using chat2Data::Chat2DataException;
         using chat2Data::ErrorCode;
-
-        bool IsValidPort(int port)
-        {
-            return port > 0 && port <= 65535;
-        }
+        using chat2Data::Utils;
 
         bool IsValidServiceAddress(const std::string &address)
         {
@@ -34,14 +31,14 @@ namespace chat2data
             int port = 0;
             const auto end = address.data() + address.size();
             const auto result = std::from_chars(address.data() + colon + 1, end, port);
-            return result.ec == std::errc{} && result.ptr == end && IsValidPort(port);
+            return result.ec == std::errc{} && result.ptr == end && Utils::IsValidPort(port);
         }
 
         void ValidateConfig(const NotifyServerConfig &config)
         {
             // 服务名会作为 etcd 键的一级路径使用。
             const auto &name = config.service_name;
-            if (!IsValidPort(config.port) || config.registry_address.empty() || name.empty() ||
+            if (!Utils::IsValidPort(config.port) || config.registry_address.empty() || name.empty() ||
                 name.find('/') != std::string::npos || !IsValidServiceAddress(config.service_address) ||
                 config.queue.max_tasks == 0 || config.queue.max_payload_bytes == 0 ||
                 config.queue.task_timeout <= std::chrono::milliseconds::zero())
@@ -49,8 +46,7 @@ namespace chat2data
 
             const auto &mail = config.mail;
             if ((mail.url.compare(0, 8, "smtps://") != 0 && mail.url.compare(0, 7, "smtp://") != 0) ||
-                mail.from.empty() || mail.from.find_first_of("\r\n") != std::string::npos ||
-                mail.from.find('\0') != std::string::npos)
+                !Utils::IsValidEmail(mail.from))
                 throw Chat2DataException(ErrorCode::NOTIFY_SERVER_CONFIG_INVALID);
 
             // 启动前检查模板文件可读且有内容。

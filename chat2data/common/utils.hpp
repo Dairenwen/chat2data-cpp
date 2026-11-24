@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace Json
 {
@@ -29,6 +30,18 @@ namespace chat2Data
         // 密码记录包含算法版本、随机盐和派生哈希。
         static std::string HashPassword(const std::string &password);
         static bool VerifyPassword(const std::string &password, const std::string &record);
+
+        // 校验单个 ASCII 邮箱地址及完整域名的格式。
+        static bool IsValidEmail(std::string_view email) noexcept;
+
+        // 检查配置端口是否在 1～65535 范围内。
+        static bool IsValidPort(std::int64_t port) noexcept;
+
+        // 解析 JSON 对象，格式错误或其他根节点类型统一返回 JSON 空值。
+        static Json::Value ParseJsonObject(const std::string &text);
+
+        // 读取对象中的字符串字段，缺失字段或其他类型统一返回空字符串。
+        static std::string ReadJsonString(const Json::Value &object, const char *name);
 
         /**
          * @brief 获取当前系统时间。

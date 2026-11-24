@@ -45,6 +45,7 @@ namespace chat2Data
         // AI 子服务：600～699。
         // 网关子服务：700～799。
         GATEWAY_USER_RPC_FAILED = 700,
+        GATEWAY_NOT_IMPLEMENTED,
     };
 
     // 返回错误码对应的描述；未定义的错误码返回“未知错误”。

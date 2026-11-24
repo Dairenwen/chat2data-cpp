@@ -11,7 +11,7 @@ namespace httplib
     class Server;
 }
 
-namespace GatewayService
+namespace chat2data
 {
     class GatewayServiceImpl;
     class DiscoveryProcess;

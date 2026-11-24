@@ -1,6 +1,7 @@
 #include "gatewayServiceImpl.hpp"
 #include "errorHandler.hpp"
 #include "userService.pb.h"
+#include "utils.hpp"
 
 #include <BreezeLog.hpp>
 #include <BreezeRPC.hpp>
@@ -15,26 +16,13 @@
 DECLARE_string(user_service);
 DECLARE_int32(get_code_rpc_timeout_ms);
 
-namespace GatewayService
+namespace chat2data
 {
     namespace
     {
         using chat2Data::ErrorCode;
         using chat2Data::UserService_Stub;
-
-        // 从 HTTP 请求中解析 JSON 对象，若请求体为空或非对象则返回空对象
-        Json::Value ReadBody(const httplib::Request &request)
-        {
-            const auto body = BreezeUtil::JSON::unserialize(request.body);
-            return body && body->isObject() ? *body : Json::Value{};
-        }
-
-        // 从 JSON 对象中读取字符串字段，若字段不存在或非字符串则返回空字符串
-        std::string ReadString(const Json::Value &body, const char *name)
-        {
-            const auto &field = body[name];
-            return field.isString() ? field.asString() : std::string{};
-        }
+        using chat2Data::Utils;
 
         // 将 RPC 调用结果封装为 HTTP 响应，若 result 为空则不返回 result 字段
         void Reply(httplib::Response &response, int status, const std::string &request_id,
@@ -59,14 +47,22 @@ namespace GatewayService
             Reply(response, status, request_id, static_cast<int>(code), chat2Data::error2String(code));
         }
 
+        // 优先使用查询参数中的请求 ID，JSON 请求也可从请求体取值。
+        void ReplyNotImplemented(const httplib::Request &request, httplib::Response &response)
+        {
+            auto request_id = request.get_param_value("requestId");
+            if (request_id.empty() && request.get_header_value("Content-Type").find("application/json") == 0)
+                request_id = Utils::ReadJsonString(Utils::ParseJsonObject(request.body), "requestId");
+            ReplyError(response, 501, request_id, ErrorCode::GATEWAY_NOT_IMPLEMENTED);
+        }
+
         // 使用模版函数定义用户服务的 RPC 方法类型，便于后续调用
         template <typename Request, typename Response>
         using UserMethod = void (UserService_Stub::*)(google::protobuf::RpcController *, const Request *, Response *, google::protobuf::Closure *);
 
         // 每次 RPC 只发一次，避免重复注册、创建会话或发送验证码。
         template <typename Request, typename Response>
-        bool CallUser(UserService_Stub &stub, UserMethod<Request, Response> method,
-                      const Request &request, Response &result, httplib::Response &http_response, int timeout_ms = -1)
+        bool CallUser(UserService_Stub &stub, UserMethod<Request, Response> method, const Request &request, Response &result, httplib::Response &http_response, int timeout_ms = -1)
         {
             brpc::Controller controller;
             if (timeout_ms > 0) // 设置的超时是为通知服务的 RPC 调用提供的预算
@@ -273,50 +269,50 @@ namespace GatewayService
     // ->调用 ForwardUser 转发给用户服务->最后返回结果
     void GatewayServiceImpl::ValidateNickname(const httplib::Request &request, httplib::Response &response)
     {
-        const auto body = ReadBody(request);
+        const auto body = Utils::ParseJsonObject(request.body);
         chat2Data::ValidNicknameRequest rpc;
-        rpc.set_request_id(ReadString(body, "requestId"));
-        rpc.set_nickname(ReadString(body, "nickname"));
+        rpc.set_request_id(Utils::ReadJsonString(body, "requestId"));
+        rpc.set_nickname(Utils::ReadJsonString(body, "nickname"));
         ForwardUser(*_channels, response, rpc, !rpc.nickname().empty(), &UserService_Stub::ValidNickname);
     }
 
     void GatewayServiceImpl::ValidateEmail(const httplib::Request &request, httplib::Response &response)
     {
-        const auto body = ReadBody(request);
+        const auto body = Utils::ParseJsonObject(request.body);
         chat2Data::ValidEmailRequest rpc;
-        rpc.set_request_id(ReadString(body, "requestId"));
-        rpc.set_email(ReadString(body, "email"));
+        rpc.set_request_id(Utils::ReadJsonString(body, "requestId"));
+        rpc.set_email(Utils::ReadJsonString(body, "email"));
         ForwardUser(*_channels, response, rpc, !rpc.email().empty(), &UserService_Stub::ValidEmail);
     }
 
     void GatewayServiceImpl::RegisterUser(const httplib::Request &request, httplib::Response &response)
     {
-        const auto body = ReadBody(request);
+        const auto body = Utils::ParseJsonObject(request.body);
         chat2Data::UserRegisterRequest rpc;
-        rpc.set_request_id(ReadString(body, "requestId"));
-        rpc.set_nickname(ReadString(body, "nickname"));
-        rpc.set_email(ReadString(body, "email"));
-        rpc.set_password(ReadString(body, "password"));
+        rpc.set_request_id(Utils::ReadJsonString(body, "requestId"));
+        rpc.set_nickname(Utils::ReadJsonString(body, "nickname"));
+        rpc.set_email(Utils::ReadJsonString(body, "email"));
+        rpc.set_password(Utils::ReadJsonString(body, "password"));
         const bool has_fields = !rpc.nickname().empty() && !rpc.email().empty() && !rpc.password().empty();
         ForwardUser(*_channels, response, rpc, has_fields, &UserService_Stub::UserRegister);
     }
 
     void GatewayServiceImpl::SessionLogin(const httplib::Request &request, httplib::Response &response)
     {
-        const auto body = ReadBody(request);
+        const auto body = Utils::ParseJsonObject(request.body);
         chat2Data::SessionLoginRequest rpc;
-        rpc.set_request_id(ReadString(body, "requestId"));
-        rpc.set_session_id(ReadString(body, "sessionId"));
+        rpc.set_request_id(Utils::ReadJsonString(body, "requestId"));
+        rpc.set_session_id(Utils::ReadJsonString(body, "sessionId"));
         ForwardUser(*_channels, response, rpc, !rpc.session_id().empty(), &UserService_Stub::SessionLogin);
     }
 
     void GatewayServiceImpl::PasswordLogin(const httplib::Request &request, httplib::Response &response)
     {
-        const auto body = ReadBody(request);
+        const auto body = Utils::ParseJsonObject(request.body);
         chat2Data::PasswdLoginRequest rpc;
-        rpc.set_request_id(ReadString(body, "requestId"));
-        rpc.set_nickname(ReadString(body, "nickname"));
-        rpc.set_password(ReadString(body, "password"));
+        rpc.set_request_id(Utils::ReadJsonString(body, "requestId"));
+        rpc.set_nickname(Utils::ReadJsonString(body, "nickname"));
+        rpc.set_password(Utils::ReadJsonString(body, "password"));
         const bool has_fields = !rpc.nickname().empty() && !rpc.password().empty();
         // 注意这里 PasswordLogin 需要返回 sessionId
         ForwardUser(*_channels, response, rpc, has_fields, &UserService_Stub::PasswdLogin, SessionResult<chat2Data::PasswdLoginResponse>);
@@ -324,35 +320,34 @@ namespace GatewayService
 
     void GatewayServiceImpl::GetVerificationCode(const httplib::Request &request, httplib::Response &response)
     {
-        const auto body = ReadBody(request);
+        const auto body = Utils::ParseJsonObject(request.body);
         chat2Data::GetCodeRequest rpc;
-        rpc.set_request_id(ReadString(body, "requestId"));
-        rpc.set_email(ReadString(body, "email"));
+        rpc.set_request_id(Utils::ReadJsonString(body, "requestId"));
+        rpc.set_email(Utils::ReadJsonString(body, "email"));
         // 超时覆盖用户服务等待 SMTP 投递结果及处理 Redis 记录的时间
         ForwardUser(*_channels, response, rpc, !rpc.email().empty(), &UserService_Stub::GetCode, CodeResult, nullptr, FLAGS_get_code_rpc_timeout_ms);
     }
 
     void GatewayServiceImpl::VerificationCodeLogin(const httplib::Request &request, httplib::Response &response)
     {
-        const auto body = ReadBody(request);
+        const auto body = Utils::ParseJsonObject(request.body);
         chat2Data::VcodeLoginRequest rpc;
-        rpc.set_request_id(ReadString(body, "requestId"));
-        rpc.set_email(ReadString(body, "email"));
-        rpc.set_code_id(ReadString(body, "codeId"));
-        rpc.set_verify_code(ReadString(body, "verifyCode"));
+        rpc.set_request_id(Utils::ReadJsonString(body, "requestId"));
+        rpc.set_email(Utils::ReadJsonString(body, "email"));
+        rpc.set_code_id(Utils::ReadJsonString(body, "codeId"));
+        rpc.set_verify_code(Utils::ReadJsonString(body, "verifyCode"));
         const bool has_fields = !rpc.email().empty() && !rpc.code_id().empty() && !rpc.verify_code().empty();
         ForwardUser(*_channels, response, rpc, has_fields, &UserService_Stub::VcodeLogin, SessionResult<chat2Data::VcodeLoginResponse>);
     }
 
     void GatewayServiceImpl::Logout(const httplib::Request &request, httplib::Response &response)
     {
-        const auto body = ReadBody(request);
+        const auto body = Utils::ParseJsonObject(request.body);
         chat2Data::LogoutRequest rpc;
-        rpc.set_request_id(ReadString(body, "requestId"));
-        rpc.set_session_id(ReadString(body, "sessionId"));
+        rpc.set_request_id(Utils::ReadJsonString(body, "requestId"));
+        rpc.set_session_id(Utils::ReadJsonString(body, "sessionId"));
         // Logout 需要校验会话是否有效，因此传入 session_id
-        ForwardUser<chat2Data::LogoutRequest, chat2Data::LogoutResponse>(
-            *_channels, response, rpc, !rpc.session_id().empty(), &UserService_Stub::Logout, nullptr, &rpc.session_id());
+        ForwardUser<chat2Data::LogoutRequest, chat2Data::LogoutResponse>(*_channels, response, rpc, !rpc.session_id().empty(), &UserService_Stub::Logout, nullptr, &rpc.session_id());
     }
 
     void GatewayServiceImpl::GetUserInfo(const httplib::Request &request, httplib::Response &response)
@@ -364,83 +359,103 @@ namespace GatewayService
         ForwardUser(*_channels, response, rpc, !rpc.session_id().empty(), &UserService_Stub::GetUserInfo, UserInfoResult, &rpc.session_id());
     }
 
-    void GatewayServiceImpl::UploadFileInfo(const httplib::Request &, httplib::Response &)
+    void GatewayServiceImpl::UploadFileInfo(const httplib::Request &request, httplib::Response &response)
     {
+        ReplyNotImplemented(request, response);
     }
 
-    void GatewayServiceImpl::GetFileInfo(const httplib::Request &, httplib::Response &)
+    void GatewayServiceImpl::GetFileInfo(const httplib::Request &request, httplib::Response &response)
     {
+        ReplyNotImplemented(request, response);
     }
 
-    void GatewayServiceImpl::UploadFile(const httplib::Request &, httplib::Response &)
+    void GatewayServiceImpl::UploadFile(const httplib::Request &request, httplib::Response &response)
     {
+        ReplyNotImplemented(request, response);
     }
 
-    void GatewayServiceImpl::DownloadFile(const httplib::Request &, httplib::Response &)
+    void GatewayServiceImpl::DownloadFile(const httplib::Request &request, httplib::Response &response)
     {
+        ReplyNotImplemented(request, response);
     }
 
-    void GatewayServiceImpl::DeleteFile(const httplib::Request &, httplib::Response &)
+    void GatewayServiceImpl::DeleteFile(const httplib::Request &request, httplib::Response &response)
     {
+        ReplyNotImplemented(request, response);
     }
 
-    void GatewayServiceImpl::PreviewExcel(const httplib::Request &, httplib::Response &)
+    void GatewayServiceImpl::PreviewExcel(const httplib::Request &request, httplib::Response &response)
     {
+        ReplyNotImplemented(request, response);
     }
 
-    void GatewayServiceImpl::GetFileList(const httplib::Request &, httplib::Response &)
+    void GatewayServiceImpl::GetFileList(const httplib::Request &request, httplib::Response &response)
     {
+        ReplyNotImplemented(request, response);
     }
 
-    void GatewayServiceImpl::AssociateFileWithSession(const httplib::Request &, httplib::Response &)
+    void GatewayServiceImpl::AssociateFileWithSession(const httplib::Request &request, httplib::Response &response)
     {
+        ReplyNotImplemented(request, response);
     }
 
-    void GatewayServiceImpl::UploadSQLiteFile(const httplib::Request &, httplib::Response &)
+    void GatewayServiceImpl::UploadSQLiteFile(const httplib::Request &request, httplib::Response &response)
     {
+        ReplyNotImplemented(request, response);
     }
 
-    void GatewayServiceImpl::ConnectDatabase(const httplib::Request &, httplib::Response &)
+    void GatewayServiceImpl::ConnectDatabase(const httplib::Request &request, httplib::Response &response)
     {
+        ReplyNotImplemented(request, response);
     }
 
-    void GatewayServiceImpl::ListDatabaseTables(const httplib::Request &, httplib::Response &)
+    void GatewayServiceImpl::ListDatabaseTables(const httplib::Request &request, httplib::Response &response)
     {
+        ReplyNotImplemented(request, response);
     }
 
-    void GatewayServiceImpl::DisconnectDatabase(const httplib::Request &, httplib::Response &)
+    void GatewayServiceImpl::DisconnectDatabase(const httplib::Request &request, httplib::Response &response)
     {
+        ReplyNotImplemented(request, response);
     }
 
-    void GatewayServiceImpl::GetTableData(const httplib::Request &, httplib::Response &)
+    void GatewayServiceImpl::GetTableData(const httplib::Request &request, httplib::Response &response)
     {
+        ReplyNotImplemented(request, response);
     }
 
-    void GatewayServiceImpl::GetConnectionStatus(const httplib::Request &, httplib::Response &)
+    void GatewayServiceImpl::GetConnectionStatus(const httplib::Request &request, httplib::Response &response)
     {
+        ReplyNotImplemented(request, response);
     }
 
-    void GatewayServiceImpl::GetModels(const httplib::Request &, httplib::Response &)
+    void GatewayServiceImpl::GetModels(const httplib::Request &request, httplib::Response &response)
     {
+        ReplyNotImplemented(request, response);
     }
 
-    void GatewayServiceImpl::CreateChatSession(const httplib::Request &, httplib::Response &)
+    void GatewayServiceImpl::CreateChatSession(const httplib::Request &request, httplib::Response &response)
     {
+        ReplyNotImplemented(request, response);
     }
 
-    void GatewayServiceImpl::GetChatSessions(const httplib::Request &, httplib::Response &)
+    void GatewayServiceImpl::GetChatSessions(const httplib::Request &request, httplib::Response &response)
     {
+        ReplyNotImplemented(request, response);
     }
 
-    void GatewayServiceImpl::GetChatHistory(const httplib::Request &, httplib::Response &)
+    void GatewayServiceImpl::GetChatHistory(const httplib::Request &request, httplib::Response &response)
     {
+        ReplyNotImplemented(request, response);
     }
 
-    void GatewayServiceImpl::DeleteChatSession(const httplib::Request &, httplib::Response &)
+    void GatewayServiceImpl::DeleteChatSession(const httplib::Request &request, httplib::Response &response)
     {
+        ReplyNotImplemented(request, response);
     }
 
-    void GatewayServiceImpl::SendStreamMessage(const httplib::Request &, httplib::Response &)
+    void GatewayServiceImpl::SendStreamMessage(const httplib::Request &request, httplib::Response &response)
     {
+        ReplyNotImplemented(request, response);
     }
 }

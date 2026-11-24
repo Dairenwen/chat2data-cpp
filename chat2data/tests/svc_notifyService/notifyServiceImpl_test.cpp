@@ -193,6 +193,23 @@ namespace
         Call(&NotifyService_Stub::SendEmail, report, ErrorCode::NOTIFY_INVALID_INPUT);
     }
 
+    // 两类邮件共用收件地址校验，格式错误在 SMTP 投递前返回。
+    TEST_F(NotifyServiceTest, RejectsMalformedRecipientForBothMailTypes)
+    {
+        SendVerifyCodeRequest code;
+        code.set_request_id("invalid-recipient-code");
+        code.set_email("alice@example。test");
+        code.set_verify_code("123456");
+        Call(&NotifyService_Stub::SendVerifyCode, code, ErrorCode::NOTIFY_INVALID_INPUT);
+
+        SendEmailRequest report;
+        report.set_request_id("invalid-recipient-mail");
+        report.set_to_email("alice@invalid..example.test");
+        report.set_subject("报告");
+        report.set_content("<p>结果</p>");
+        Call(&NotifyService_Stub::SendEmail, report, ErrorCode::NOTIFY_INVALID_INPUT);
+    }
+
     // 通过真实 QQ SMTP 发送现有 HTML 模板渲染的验证码邮件。
     TEST_F(NotifyServiceLiveTest, SendsVerificationCode)
     {

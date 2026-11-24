@@ -26,3 +26,4 @@ endfunction()
 
 add_service_proto(user_service_proto userService)
 add_service_proto(notify_service_proto notifyService)
+add_service_proto(excel_parse_service_proto excelParseService)

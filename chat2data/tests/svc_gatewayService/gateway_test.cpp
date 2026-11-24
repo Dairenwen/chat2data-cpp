@@ -250,34 +250,40 @@ namespace
 
     TEST_F(GatewayHttpTest, FileDatabaseAndAiRoutesHavePlaceholders)
     {
-        // 用户路由由联合测试验证，文件、数据库和 AI 路由仍为占位。
+        // 占位路由应明确返回未接通状态，并关联 JSON 或查询参数中的请求 ID。
         struct Route
         {
             const char *method;
             const char *path;
         };
         const Route routes[] = {
-            {"POST", "/api/file/upload/info"}, {"GET", "/api/file/info"}, {"POST", "/api/file/upload"},
-            {"GET", "/api/file/download"}, {"DELETE", "/api/file/test-file"}, {"POST", "/api/file/preview"},
-            {"POST", "/api/file/list"}, {"POST", "/api/file/chat/map"}, {"POST", "/api/file/sqlite/upload"},
-            {"POST", "/api/db/connect"}, {"GET", "/api/db/tables"}, {"POST", "/api/db/disconnect"},
-            {"POST", "/api/db/table/data"}, {"POST", "/api/db/connection/status"}, {"POST", "/api/ai/models"},
-            {"POST", "/api/ai/session/create"}, {"POST", "/api/ai/chatSessionLists"}, {"POST", "/api/ai/history"},
-            {"POST", "/api/ai/delete"}, {"POST", "/api/ai/sendStreamMessage"}};
+            {"POST", "/api/file/upload/info"}, {"GET", "/api/file/info"}, {"POST", "/api/file/upload"}, {"GET", "/api/file/download"}, {"DELETE", "/api/file/test-file"}, {"POST", "/api/file/preview"}, {"POST", "/api/file/list"}, {"POST", "/api/file/chat/map"}, {"POST", "/api/file/sqlite/upload"}, {"POST", "/api/db/connect"}, {"GET", "/api/db/tables"}, {"POST", "/api/db/disconnect"}, {"POST", "/api/db/table/data"}, {"POST", "/api/db/connection/status"}, {"POST", "/api/ai/models"}, {"POST", "/api/ai/session/create"}, {"POST", "/api/ai/chatSessionLists"}, {"POST", "/api/ai/history"}, {"POST", "/api/ai/delete"}, {"POST", "/api/ai/sendStreamMessage"}};
         httplib::Client client("127.0.0.1", _port);
         client.set_connection_timeout(1, 0);
         client.set_read_timeout(2, 0);
         for (const auto &route : routes)
         {
             SCOPED_TRACE(std::string(route.method) + " " + route.path);
-            httplib::Result response = std::string(route.method) == "POST"
-                                           ? client.Post(route.path, "{}", "application/json")
-                                       : std::string(route.method) == "DELETE"
-                                           ? client.Delete(route.path)
-                                           : client.Get(route.path);
+            const std::string method(route.method);
+            const std::string path(route.path);
+            const auto query_path = path + "?requestId=placeholder-query";
+            const bool is_upload = path == "/api/file/upload" || path == "/api/file/sqlite/upload";
+            const bool is_json = method == "POST" && !is_upload;
+            const auto response = is_json              ? client.Post(path, R"({"requestId":"placeholder-json"})", "application/json")
+                                  : is_upload          ? client.Post(query_path, "file data", "application/octet-stream")
+                                  : method == "DELETE" ? client.Delete(query_path)
+                                                       : client.Get(query_path);
             ASSERT_TRUE(response);
-            EXPECT_EQ(response->status, 200);
-            EXPECT_TRUE(response->body.empty());
+            EXPECT_EQ(response->status, 501);
+            EXPECT_EQ(response->get_header_value("Content-Type"), "application/json; charset=utf-8");
+            Json::Value body;
+            Json::CharReaderBuilder reader;
+            std::istringstream input(response->body);
+            ASSERT_TRUE(Json::parseFromStream(reader, input, &body, nullptr));
+            EXPECT_EQ(body["requestId"].asString(), is_json ? "placeholder-json" : "placeholder-query");
+            EXPECT_EQ(body["errorCode"].asInt(), 701);
+            EXPECT_EQ(body["errorMsg"].asString(), "后端接口暂未接通");
+            EXPECT_FALSE(body.isMember("result"));
         }
     }
 

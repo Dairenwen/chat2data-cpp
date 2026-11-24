@@ -25,7 +25,7 @@
 
 extern char **environ; // 传递给 posix_spawn 的环境变量
 
-namespace GatewayService
+namespace chat2data
 {
     namespace
     {

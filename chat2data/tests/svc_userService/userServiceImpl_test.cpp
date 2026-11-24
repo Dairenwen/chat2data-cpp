@@ -166,6 +166,73 @@ namespace
         EXPECT_FALSE(missing_user.has_user_info());
     }
 
+    TEST_F(UserServiceImplTest, EnforcesEmailSyntaxAndLengthLimits)
+    {
+        const auto domain = std::string(63, 'a') + "." + std::string(63, 'b') + "." + std::string(61, 'c');
+        const auto max_length_email = std::string(64, 'a') + "@" + domain;
+        ASSERT_EQ(max_length_email.size(), 254u);
+        const std::string valid_emails[] = {
+            "alice.test+tag@Mail-2.example.test",
+            "o'connor@example.test",
+            "alice@xn--bcher-kva.example",
+            max_length_email,
+        };
+        const std::string invalid_emails[] = {
+            "", "。", "@example.test", "alice@", "alice@@example.test",
+            ".alice@example.test", "alice.@example.test", "a..b@example.test",
+            "\"alice@example.test", "a,b@example.test", "a;b@example.test",
+            "<alice@example.test", "a\\b@example.test", "a b@example.test",
+            "alice@.example.test", "alice@example..test", "alice@example.test.",
+            "alice@-example.test", "alice@example-.test", "alice@ex_ample.test", "alice@exam/ple.test",
+            "alice@...", "alice@localhost", "alice@127.0.0.1", "alice@[127.0.0.1]",
+            "alice@example.123", "alice@example。test", "alice@example.test。", "爱丽丝@example.test",
+            u8"alice@exam\u00a0ple.test", u8"alice@exam\u200bple.test", "alice@example.test\r\n",
+            std::string("alice\0@example.test", sizeof("alice\0@example.test") - 1),
+            std::string(65, 'a') + "@example.test",
+            "alice@" + std::string(64, 'a') + ".test",
+            max_length_email + 'c',
+        };
+
+        ValidEmailRequest request;
+        request.set_request_id(prefix);
+        for (const auto &email : valid_emails)
+        {
+            SCOPED_TRACE(email);
+            request.set_email(email);
+            Call(&UserService_Stub::ValidEmail, request);
+        }
+        for (const auto &email : invalid_emails)
+        {
+            SCOPED_TRACE(email);
+            request.set_email(email);
+            Call(&UserService_Stub::ValidEmail, request, ErrorCode::USER_INVALID_INPUT);
+        }
+    }
+
+    TEST_F(UserServiceImplTest, RejectsMalformedEmailDuringRegistrationAndCodeLogin)
+    {
+        const std::string email = "alice@example.test。";
+        UserRegisterRequest registration;
+        registration.set_request_id(prefix);
+        registration.set_nickname(prefix);
+        registration.set_email(email);
+        registration.set_password("RpcPassword2026!");
+        Call(&UserService_Stub::UserRegister, registration, ErrorCode::USER_INVALID_INPUT);
+
+        GetCodeRequest get_code;
+        get_code.set_request_id(prefix);
+        get_code.set_email(email);
+        const auto code = Call(&UserService_Stub::GetCode, get_code, ErrorCode::USER_INVALID_INPUT);
+        EXPECT_TRUE(code.code_id().empty());
+
+        VcodeLoginRequest login;
+        login.set_request_id(prefix);
+        login.set_email(email);
+        login.set_code_id(prefix);
+        login.set_verify_code("123456");
+        Call(&UserService_Stub::VcodeLogin, login, ErrorCode::USER_INVALID_INPUT);
+    }
+
     // 参数和底层依赖异常由响应错误码报告，失败响应保留业务字段的默认值。
     TEST_F(UserServiceImplTest, ReturnsProtocolErrorsWithoutResultFields)
     {

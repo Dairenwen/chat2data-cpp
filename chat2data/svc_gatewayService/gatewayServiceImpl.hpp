@@ -11,7 +11,7 @@ namespace httplib
     struct Response;
 }
 
-namespace GatewayService
+namespace chat2data
 {
     class GatewayServiceImpl
     {

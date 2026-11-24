@@ -245,6 +245,11 @@ namespace gateway_user_test
         {
             ExpectReply(_http->Post("/api/user/valid/email", "{", "application/json"), "",
                         ErrorCode::USER_INVALID_INPUT, 400);
+            ExpectReply(_http->Post("/api/user/valid/email", "[]", "application/json"), "",
+                        ErrorCode::USER_INVALID_INPUT, 400);
+            ExpectReply(_http->Post("/api/user/valid/email",
+                                    R"({"requestId":"numeric-email","email":42})", "application/json"),
+                        "numeric-email", ErrorCode::USER_INVALID_INPUT, 400);
             ExpectReply(_http->Get("/api/user/info?requestId=missing-session"), "missing-session",
                         ErrorCode::USER_INVALID_INPUT, 400);
         }

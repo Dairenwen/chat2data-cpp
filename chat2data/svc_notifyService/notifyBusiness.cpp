@@ -3,9 +3,8 @@
 #include "BreezeCode.hpp"
 #include "errorHandler.hpp"
 #include "notifyService.pb.h"
+#include "utils.hpp"
 
-#include <algorithm>
-#include <cctype>
 #include <utility>
 
 namespace chat2data
@@ -24,12 +23,7 @@ namespace chat2data
         // 收件人字段只接受一个邮箱地址，以原值交给 SMTP。
         void ValidateRecipient(const std::string &email)
         {
-            const auto at = email.find('@');
-            if (email.size() > 255 || at == std::string::npos || at == 0 || at + 1 == email.size() ||
-                email.find('@', at + 1) != std::string::npos ||
-                email.find_first_of(",;<>") != std::string::npos ||
-                std::any_of(email.begin(), email.end(), [](unsigned char ch)
-                            { return std::isspace(ch) || std::iscntrl(ch); }))
+            if (!chat2Data::Utils::IsValidEmail(email))
                 throw Chat2DataException(ErrorCode::NOTIFY_INVALID_INPUT);
         }
     }

@@ -8,6 +8,7 @@
 #include "userBusiness.hpp"
 #include "userServer.hpp"
 #include "userServiceImpl.hpp"
+#include "utils.hpp"
 
 #include <chrono>
 #include <utility>
@@ -77,7 +78,7 @@ namespace chat2data
     std::unique_ptr<UserServer> UserServerBuilder::Build() const
     {
         const auto notify_rpc_timeout_ms = _notify_rpc_timeout_ms.value_or(chat2Data::kDefaultNotifyRpcTimeoutMs);
-        if (_port < 1 || _port > 65535 || notify_rpc_timeout_ms <= 0)
+        if (!chat2Data::Utils::IsValidPort(_port) || notify_rpc_timeout_ms <= 0)
             throw Chat2DataException(ErrorCode::USER_SERVER_CONFIG_INVALID);
 
         if (_registry_address.empty() || _etcd_address.empty() || _service_address.empty() ||

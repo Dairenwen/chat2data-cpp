@@ -62,10 +62,14 @@ export function transportError(error: unknown) {
   return new ApiError("无法连接网关，请检查网络后重试。", "network")
 }
 
-// 网关占位路由返回 200 空体（或 404），按“后端接口暂未接通”处理，不伪装成功。
+// 兼容返回空响应的旧网关和返回 501 的占位路由。
+export function isUnavailableReply(response: Response, text: string) {
+  return response.status === 501 || response.status === 404 || (response.ok && !text.trim())
+}
+
 export async function parseReply<T>(path: string, response: Response, requestId: string, silentInvalid = false, whole = false): Promise<T> {
   const text = await response.text()
-  if (response.status === 404 || (response.ok && !text.trim())) throw unavailableError(path, response.status)
+  if (isUnavailableReply(response, text)) throw unavailableError(path, response.status)
   let reply: { requestId?: string; errorCode?: unknown; errorMsg?: unknown; result?: T } | null = null
   try {
     reply = JSON.parse(text)

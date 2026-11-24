@@ -1,4 +1,5 @@
 #include "gatewayServer.hpp"
+#include "utils.hpp"
 #include <BreezeLog.hpp>
 #include <gflags/gflags.h>
 #include <chrono>
@@ -33,7 +34,7 @@ int main(int argc, char **argv)
     if (argc >= 4 && std::string(argv[1]) == "--gateway-discovery-worker")
     {
         // 到这里说明是网关启动的子进程，进入服务发现工作分支，参数依次为：标记、etcd 地址、父进程 PID、待监听的服务名称列表
-        return GatewayService::RunDiscoveryWorker(argv[2], {argv + 4, argv + argc}, std::stoi(argv[3]));
+        return chat2data::RunDiscoveryWorker(argv[2], {argv + 4, argv + argc}, std::stoi(argv[3]));
     }
     gflags::ParseCommandLineFlags(&argc, &argv, true);           // 解析命令行参数
     const auto level = spdlog::level::from_str(FLAGS_log_level); // 设置日志级别
@@ -43,7 +44,7 @@ int main(int argc, char **argv)
         return 1;
     }
     BreezeLog::Logger::setLevel(level);
-    if (FLAGS_gateway_port < 1 || FLAGS_gateway_port > 65535)
+    if (!chat2Data::Utils::IsValidPort(FLAGS_gateway_port))
     {
         ERR("无效的网关端口: {}", FLAGS_gateway_port);
         return 1;
@@ -59,7 +60,7 @@ int main(int argc, char **argv)
     try
     {
         // 传入网关监听地址、端口、etcd 地址和服务名称列表，构建网关服务器对象
-        GatewayService::GatewayServerBuilder builder(
+        chat2data::GatewayServerBuilder builder(
             FLAGS_gateway_address, FLAGS_gateway_port, FLAGS_etcd_address,
             {FLAGS_user_service, FLAGS_file_service, FLAGS_db_service, FLAGS_ai_service});
         auto server = builder.Build();

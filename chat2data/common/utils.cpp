@@ -2,6 +2,7 @@
 #include "BreezeUtil.hpp"
 #include "errorHandler.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <array>
 #include <chrono>
@@ -15,6 +16,7 @@
 #include <sw/redis++/redis.h>
 #include <sw/redis++/transaction.h>
 #include <sw/redis++/queued_redis.h>
+#include <utility>
 
 namespace chat2Data
 {
@@ -25,6 +27,16 @@ namespace chat2Data
         constexpr std::size_t kSaltBytes = 16;                             // 16 字节随机盐
         constexpr std::size_t kHashBytes = 32;                             // 32 字节派生哈希
         constexpr char kHexDigits[] = "0123456789abcdef";                  // 十六进制字符表
+
+        bool IsAsciiLetter(char ch) noexcept
+        {
+            return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z');
+        }
+
+        bool IsAsciiAlnum(char ch) noexcept
+        {
+            return IsAsciiLetter(ch) || (ch >= '0' && ch <= '9');
+        }
 
         // 生成安全随机字节数组，使用 OpenSSL RAND_bytes()
         template <std::size_t Size>
@@ -107,6 +119,44 @@ namespace chat2Data
         return CRYPTO_memcmp(hash.data(), record.data() + separator + 1, hash.size()) == 0;
     }
 
+    bool Utils::IsValidEmail(std::string_view email) noexcept
+    {
+        constexpr std::size_t kMaxAddressBytes = 254;
+        constexpr std::size_t kMaxLocalPartBytes = 64;
+        constexpr std::size_t kMaxDomainLabelBytes = 63;
+        constexpr std::string_view kLocalSymbols = "!#$%&'*+-/=?^_`{|}~.";
+
+        const auto at = email.find('@');
+        if (email.size() > kMaxAddressBytes || at == std::string_view::npos ||
+            at == 0 || at > kMaxLocalPartBytes)
+            return false;
+
+        // 本地部分由非空的 dot-atom 段组成，保留常见的加号别名。
+        const auto local = email.substr(0, at);
+        if (local.front() == '.' || local.back() == '.' || local.find("..") != std::string_view::npos ||
+            !std::all_of(local.begin(), local.end(), [kLocalSymbols](char ch)
+                         { return IsAsciiAlnum(ch) || kLocalSymbols.find(ch) != std::string_view::npos; }))
+            return false;
+
+        auto domain = email.substr(at + 1);
+        if (domain.find('.') == std::string_view::npos)
+            return false;
+
+        // 逐段校验 DNS 主机名，并用顶级域规则排除纯数字结尾和裸 IP。
+        for (;;)
+        {
+            const auto dot = domain.find('.');
+            const auto label = domain.substr(0, dot);
+            if (label.empty() || label.size() > kMaxDomainLabelBytes ||
+                !IsAsciiAlnum(label.front()) || !IsAsciiAlnum(label.back()) ||
+                !std::all_of(label.begin(), label.end(), [](char ch) { return IsAsciiAlnum(ch) || ch == '-'; }))
+                return false;
+            if (dot == std::string_view::npos)
+                return std::any_of(label.begin(), label.end(), IsAsciiLetter);
+            domain.remove_prefix(dot + 1);
+        }
+    }
+
     std::uint64_t Utils::NowMs()
     {
         return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -114,12 +164,31 @@ namespace chat2Data
                                               .count());
     }
 
-    Json::Value Utils::ParseCacheJson(const std::string &text)
+    bool Utils::IsValidPort(std::int64_t port) noexcept
+    {
+        return port > 0 && port <= std::numeric_limits<std::uint16_t>::max();
+    }
+
+    Json::Value Utils::ParseJsonObject(const std::string &text)
     {
         auto value = BreezeUtil::JSON::unserialize(text);
-        if (!value || !value->isObject())
+        return value && value->isObject() ? std::move(*value) : Json::Value{};
+    }
+
+    std::string Utils::ReadJsonString(const Json::Value &object, const char *name)
+    {
+        if (!object.isObject())
+            return {};
+        const auto &field = object[name];
+        return field.isString() ? field.asString() : std::string{};
+    }
+
+    Json::Value Utils::ParseCacheJson(const std::string &text)
+    {
+        auto value = ParseJsonObject(text);
+        if (value.isNull())
             throw Chat2DataException(ErrorCode::USER_CACHE_INVALID);
-        return *value;
+        return value;
     }
 
     void Utils::WriteCache(sw::redis::Redis &redis, const std::string &key, const Json::Value &value, std::uint64_t ttlMs)
