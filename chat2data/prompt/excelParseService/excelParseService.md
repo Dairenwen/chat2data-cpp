@@ -15,7 +15,7 @@ Excel 解析子服务是内部 brpc 服务。文件子服务先将原始 `.xlsx`
 
 ## 2. 接口定义
 
-沿用现有协议的字段名、编号、类型和包名 `chat2Data.excelParseService`。服务名为 `ExcelParserService`，链接现有 `excel_parse_service_proto` 构建目标。见 [excelParseService.proto](../../proto/excelParseService.proto) 和 [接口设计](../../docs/接口设计.md)。
+沿用现有协议的字段名、编号和类型，包名统一为 `chat2Data`。服务名为 `ExcelParserService`，链接现有 `excel_parse_service_proto` 构建目标。见 [excelParseService.proto](../../proto/excelParseService.proto) 和 [接口设计](../../docs/接口设计.md)。
 
 | RPC 方法          | 请求字段                                         | 成功结果                                            |
 | ----------------- | ------------------------------------------------ | --------------------------------------------------- |
@@ -179,7 +179,7 @@ YYYY-MM-DD HH:MM:SS
 
 ## 5. RPC 接口实现
 
-`chat2data::ExcelParserServiceImpl` 继承生成的 `chat2Data::excelParseService::ExcelParserService`。构造时注入 `ExcelParserBusiness`，由接口层校验请求、调用业务层并封装响应。见 [通知服务 RPC 实现](../../svc_notifyService/notifyServiceImpl.cpp)。
+`chat2data::ExcelParserServiceImpl` 继承生成的 `chat2Data::ExcelParserService`。构造时注入 `ExcelParserBusiness`，由接口层校验请求、调用业务层并封装响应。见 [通知服务 RPC 实现](../../svc_notifyService/notifyServiceImpl.cpp)。
 
 1. 使用 `brpc::ClosureGuard` 管理 `done`，保证所有返回路径完成一次响应。进入业务流程前校验必填字段。
 2. 使用公共 `ErrorCode` 的 Excel 解析预留范围 `400–499` 表达参数错误、文件下载失败、工作簿无效、工作表缺失和解析失败。复用 `Chat2DataException::Code()` 和 `error2String`，成功时返回完整结果。见 [公共错误处理](../../common/errorHandler.hpp)。

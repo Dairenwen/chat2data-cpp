@@ -1,5 +1,5 @@
 syntax = "proto3";
-package chat2Data.excelParseService;
+package chat2Data;
 option cc_generic_services = true;
 
 message GetWorksheetsRequest {

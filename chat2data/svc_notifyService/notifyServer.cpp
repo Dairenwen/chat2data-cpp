@@ -8,7 +8,6 @@
 #include "utils.hpp"
 
 #include <brpc/server.h>
-#include <charconv>
 #include <fstream>
 #include <utility>
 
@@ -20,26 +19,12 @@ namespace chat2data
         using chat2Data::ErrorCode;
         using chat2Data::Utils;
 
-        bool IsValidServiceAddress(const std::string &address)
-        {
-            // 注册地址的末尾端口供调用方连接，可配置为外部映射端口。
-            const auto colon = address.rfind(':');
-            if (colon == std::string::npos || colon == 0 ||
-                address.find_first_of("/ \t\r\n") != std::string::npos || address.find('\0') != std::string::npos)
-                return false;
-
-            int port = 0;
-            const auto end = address.data() + address.size();
-            const auto result = std::from_chars(address.data() + colon + 1, end, port);
-            return result.ec == std::errc{} && result.ptr == end && Utils::IsValidPort(port);
-        }
-
         void ValidateConfig(const NotifyServerConfig &config)
         {
             // 服务名会作为 etcd 键的一级路径使用。
             const auto &name = config.service_name;
             if (!Utils::IsValidPort(config.port) || config.registry_address.empty() || name.empty() ||
-                name.find('/') != std::string::npos || !IsValidServiceAddress(config.service_address) ||
+                name.find('/') != std::string::npos || !Utils::IsValidHostPort(config.service_address) ||
                 config.queue.max_tasks == 0 || config.queue.max_payload_bytes == 0 ||
                 config.queue.task_timeout <= std::chrono::milliseconds::zero())
                 throw Chat2DataException(ErrorCode::NOTIFY_SERVER_CONFIG_INVALID);

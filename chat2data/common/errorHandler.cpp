@@ -31,6 +31,16 @@ namespace chat2Data
             // 文件子服务错误描述。
             // 数据库子服务错误描述。
             // Excel 解析子服务错误描述。
+            {ErrorCode::EXCEL_INVALID_INPUT, "Excel 解析请求参数无效"},
+            {ErrorCode::EXCEL_DOWNLOAD_FAILED, "下载 Excel 工作簿失败"},
+            {ErrorCode::EXCEL_WORKBOOK_INVALID, "Excel 工作簿无效"},
+            {ErrorCode::EXCEL_WORKSHEET_NOT_FOUND, "Excel 工作表不存在"},
+            {ErrorCode::EXCEL_EMPTY_WORKSHEET, "Excel 工作表没有可解析的数据结构"},
+            {ErrorCode::EXCEL_PARSE_FAILED, "解析 Excel 工作表失败"},
+            {ErrorCode::EXCEL_SERVER_CONFIG_INVALID, "Excel 解析服务启动配置无效"},
+            {ErrorCode::EXCEL_ETCD_CONNECTION_FAILED, "无法连接 Excel 解析服务的 etcd 端点"},
+            {ErrorCode::EXCEL_SERVER_START_FAILED, "Excel 解析服务启动失败"},
+            {ErrorCode::EXCEL_SERVICE_REGISTRATION_FAILED, "Excel 解析服务注册失败"},
             // 通知子服务错误描述。
             {ErrorCode::NOTIFY_INVALID_INPUT, "通知请求参数无效"},
             {ErrorCode::NOTIFY_SEND_FAILED, "邮件发送失败"},

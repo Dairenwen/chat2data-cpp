@@ -5,7 +5,9 @@
 #include <algorithm>
 #include <atomic>
 #include <array>
+#include <charconv>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <openssl/crypto.h>
@@ -35,7 +37,7 @@ namespace chat2Data
 
         bool IsAsciiAlnum(char ch) noexcept
         {
-            return IsAsciiLetter(ch) || (ch >= '0' && ch <= '9');
+            return IsAsciiLetter(ch) || Utils::IsAsciiDigit(ch);
         }
 
         // 生成安全随机字节数组，使用 OpenSSL RAND_bytes()
@@ -119,6 +121,87 @@ namespace chat2Data
         return CRYPTO_memcmp(hash.data(), record.data() + separator + 1, hash.size()) == 0;
     }
 
+    bool Utils::IsAsciiDigit(char ch) noexcept
+    {
+        return ch >= '0' && ch <= '9';
+    }
+
+    char Utils::ToAsciiLower(char ch) noexcept
+    {
+        return ch >= 'A' && ch <= 'Z' ? ch + ('a' - 'A') : ch;
+    }
+
+    std::string Utils::ToAsciiLower(std::string_view text)
+    {
+        std::string lower(text);
+        for (auto &ch : lower)
+            ch = ToAsciiLower(ch);
+        return lower;
+    }
+
+    std::string_view Utils::TrimAsciiWhitespace(std::string_view text) noexcept
+    {
+        constexpr std::string_view whitespace = " \t\n\r\f\v";
+        const auto first = text.find_first_not_of(whitespace);
+        if (first == std::string_view::npos)
+            return {};
+        return text.substr(first, text.find_last_not_of(whitespace) - first + 1);
+    }
+
+    std::size_t Utils::Utf8CharWidth(std::string_view text) noexcept
+    {
+        if (text.empty())
+            return 0;
+
+        const auto first = static_cast<unsigned char>(text.front());
+        std::size_t width = 1;
+        if (first >= 0xC2 && first <= 0xDF)
+            width = 2;
+        else if (first >= 0xE0 && first <= 0xEF)
+            width = 3;
+        else if (first >= 0xF0 && first <= 0xF4)
+            width = 4;
+
+        // 检查续字节，使截断的序列可以逐字节继续处理。
+        if (width > text.size())
+            return 1;
+        for (std::size_t i = 1; i < width; ++i)
+        {
+            if ((static_cast<unsigned char>(text[i]) & 0xC0) != 0x80)
+                return 1;
+        }
+        return width;
+    }
+
+    std::string_view Utils::Utf8Prefix(std::string_view text, std::size_t character_count) noexcept
+    {
+        std::size_t bytes = 0;
+        for (std::size_t i = 0; i < character_count && bytes < text.size(); ++i)
+            bytes += Utf8CharWidth(text.substr(bytes));
+        return text.substr(0, bytes);
+    }
+
+    bool Utils::ParseFiniteDouble(std::string_view text, double &value) noexcept
+    {
+        // from_chars 自身支持负号。单独跳过前导加号，并要求数字只使用一个符号。
+        if (!text.empty() && text.front() == '+')
+        {
+            text.remove_prefix(1);
+            if (!text.empty() && text.front() == '-')
+                return false;
+        }
+        if (text.empty())
+            return false;
+
+        double number;
+        const auto end = text.data() + text.size();
+        const auto parsed = std::from_chars(text.data(), end, number, std::chars_format::general);
+        if (parsed.ec != std::errc{} || parsed.ptr != end || !std::isfinite(number))
+            return false;
+        value = number;
+        return true;
+    }
+
     bool Utils::IsValidEmail(std::string_view email) noexcept
     {
         constexpr std::size_t kMaxAddressBytes = 254;
@@ -149,7 +232,8 @@ namespace chat2Data
             const auto label = domain.substr(0, dot);
             if (label.empty() || label.size() > kMaxDomainLabelBytes ||
                 !IsAsciiAlnum(label.front()) || !IsAsciiAlnum(label.back()) ||
-                !std::all_of(label.begin(), label.end(), [](char ch) { return IsAsciiAlnum(ch) || ch == '-'; }))
+                !std::all_of(label.begin(), label.end(), [](char ch)
+                             { return IsAsciiAlnum(ch) || ch == '-'; }))
                 return false;
             if (dot == std::string_view::npos)
                 return std::any_of(label.begin(), label.end(), IsAsciiLetter);
@@ -167,6 +251,20 @@ namespace chat2Data
     bool Utils::IsValidPort(std::int64_t port) noexcept
     {
         return port > 0 && port <= std::numeric_limits<std::uint16_t>::max();
+    }
+
+    bool Utils::IsValidHostPort(std::string_view address) noexcept
+    {
+        const auto colon = address.rfind(':');
+        if (colon == std::string_view::npos || colon == 0 ||
+            address.find_first_of("/ \t\r\n") != std::string_view::npos ||
+            address.find('\0') != std::string_view::npos)
+            return false;
+
+        int port = 0;
+        const auto end = address.data() + address.size();
+        const auto parsed = std::from_chars(address.data() + colon + 1, end, port);
+        return parsed.ec == std::errc{} && parsed.ptr == end && IsValidPort(port);
     }
 
     Json::Value Utils::ParseJsonObject(const std::string &text)

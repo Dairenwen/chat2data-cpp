@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -31,11 +32,33 @@ namespace chat2Data
         static std::string HashPassword(const std::string &password);
         static bool VerifyPassword(const std::string &password, const std::string &record);
 
+        // 检查字符是否为 ASCII 数字。
+        static bool IsAsciiDigit(char ch) noexcept;
+
+        // 将 ASCII 大写字母转换为小写，其余字节保持原样。
+        static char ToAsciiLower(char ch) noexcept;
+        static std::string ToAsciiLower(std::string_view text);
+
+        // 返回去掉首尾 ASCII 空白后的原文本视图。
+        static std::string_view TrimAsciiWhitespace(std::string_view text) noexcept;
+
+        // 返回首个 UTF-8 字符的字节数。空输入返回 0，无法读取完整序列时按单字节前进。
+        static std::size_t Utf8CharWidth(std::string_view text) noexcept;
+
+        // 在 UTF-8 字符边界截取前 character_count 个字符，返回原文本视图。
+        static std::string_view Utf8Prefix(std::string_view text, std::size_t character_count) noexcept;
+
+        // 完整解析有限十进制数，支持符号和科学计数法，成功时写入 value。
+        static bool ParseFiniteDouble(std::string_view text, double &value) noexcept;
+
         // 校验单个 ASCII 邮箱地址及完整域名的格式。
         static bool IsValidEmail(std::string_view email) noexcept;
 
         // 检查配置端口是否在 1～65535 范围内。
         static bool IsValidPort(std::int64_t port) noexcept;
+
+        // 检查地址是否包含主机和有效端口，主机解析由调用方负责。
+        static bool IsValidHostPort(std::string_view address) noexcept;
 
         // 解析 JSON 对象，格式错误或其他根节点类型统一返回 JSON 空值。
         static Json::Value ParseJsonObject(const std::string &text);

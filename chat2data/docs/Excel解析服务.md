@@ -61,7 +61,7 @@ sequenceDiagram
 
 ## 2. 接口设计
 
-协议定义在 [excelParseService.proto](../../proto/excelParseService.proto)，沿用附件的包名 `chat2Data.excelParseService` 和现有[接口设计](../../docs/接口设计.md#23-excel解析子服务)中的服务名 `ExcelParserService`。启用 C++ 通用服务接口以供 brpc 生成服务端基类和调用端存根。
+协议定义在 [excelParseService.proto](../proto/excelParseService.proto)，使用项目统一的包名 `chat2Data` 和[接口设计](接口设计.md#23-excel解析子服务)中的服务名 `ExcelParserService`。启用 C++ 通用服务接口以供 brpc 生成服务端基类和调用端存根。
 
 两条 RPC 都接收非空的 `request_id` 和 `fdfs_file_id`。文件 ID 使用 FastDFS 返回的完整标识。响应原样返回请求 ID，`error_code = 0` 表示业务成功，此时 `error_msg` 为空。调用方同时检查 brpc 传输状态和业务错误码。
 
