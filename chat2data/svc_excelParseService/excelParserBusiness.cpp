@@ -20,7 +20,7 @@ namespace chat2data
                 : _path((std::filesystem::temp_directory_path() / "chat2data-excel-XXXXXX.xlsx").string())
             {
                 // 由系统原子地创建仅当前用户可读写的文件，供 FastDFS 写入
-                const int fd = mkstemps(_path.data(), 5); // 替换 "XXXXXX" 为唯一后缀，返回文件描述符
+                const int fd = mkstemps(_path.data(), 5); // 将扩展名前的 "XXXXXX" 替换为唯一字符序列，返回文件描述符
                 if (fd < 0)
                     throw chat2Data::Chat2DataException(chat2Data::ErrorCode::EXCEL_PARSE_FAILED);
                 close(fd);

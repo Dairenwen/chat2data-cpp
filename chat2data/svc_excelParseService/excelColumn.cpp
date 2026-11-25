@@ -11,7 +11,7 @@ namespace chat2data
         using chat2Data::Utils;
         using Type = ExcelSampleType;
 
-        // 判断 UTF-8 字符是否为汉字，汉字范围包括 CJK 统一汉字、扩展 A、兼容汉字和部首扩展。
+        // 列名允许 CJK 统一汉字、扩展 A、兼容汉字及表意数字零「〇」。
         bool IsHanCharacter(std::string_view character)
         {
             if (character.size() != 3)
@@ -34,7 +34,7 @@ namespace chat2data
             return value;
         }
 
-        // 根据文本识别日期和时间，返回 Skip 表示非日期类型。
+        // 根据文本识别日期和时间，其他文本返回 Text。
         Type ClassifyDateText(std::string_view text)
         {
             const bool with_time = text.size() == 19;
@@ -75,7 +75,7 @@ namespace chat2data
                        : Type::Text;
         }
 
-        // 判断文本是否为时间间隔，格式为 Hh、Mm 或 Ss，忽略大小写。
+        // 识别方括号中的累计时间单位 h、hh、m、mm、s、ss，忽略大小写。
         bool IsElapsedTime(std::string_view token)
         {
             if (token.empty() || token.size() > 2)
@@ -112,6 +112,7 @@ namespace chat2data
             std::string_view condition;
             bool date = false;
             bool time = false;
+            bool text = false;
 
             Type TypeHint() const
             {
@@ -223,10 +224,14 @@ namespace chat2data
             {
                 part.date |= ch == 'y' || ch == 'm' || ch == 'd';
                 part.time |= ch == 'h' || ch == 's';
+                part.text |= ch == '@';
             }
         }
 
-        if (std::any_of(sections.begin(), sections.end(), [](const FormatSection &part)
+        // 末尾带 @ 的文本段仅用于文本，数值按前面的格式段显示。
+        if (section > 0 && sections[section].text)
+            --section;
+        if (std::any_of(sections.begin(), sections.begin() + section + 1, [](const FormatSection &part)
                         { return !part.condition.empty(); }))
         {
             for (unsigned i = 0; i <= section; ++i)

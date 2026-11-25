@@ -11,7 +11,6 @@ namespace
 {
     using chat2data::ExcelParser;
     using chat2Data::Chat2DataException;
-    using chat2Data::ErrorCode;
 
     std::string Fixture(const char *name)
     {
@@ -134,14 +133,13 @@ namespace
         const auto &result = sheets.front();
         ASSERT_EQ(result.total_cols(), 10);
         ASSERT_EQ(result.total_rows(), 3);
-        EXPECT_EQ(result.columns(0).name(), "column_1");
-        EXPECT_EQ(result.columns(1).name(), "column_2026销售额");
-        EXPECT_EQ(result.columns(2).name(), "销售额_元_");
-        EXPECT_EQ(result.columns(5).name(), "name_3");
-        EXPECT_EQ(result.columns(6).name(), long_name.substr(0, 64 * std::string_view("字").size()));
-        EXPECT_EQ(result.columns(7).name(), long_name.substr(0, 62 * std::string_view("字").size()) + "_2");
-        EXPECT_EQ(result.columns(8).name(), "select");
-        EXPECT_EQ(result.columns(9).name(), "a__b");
+        const std::vector<std::string> names{
+            "column_1", "column_2026销售额", "销售额_元_", "Name", "Name_2", "name_3",
+            long_name.substr(0, 64 * std::string_view("字").size()),
+            long_name.substr(0, 62 * std::string_view("字").size()) + "_2", "select", "a__b"};
+        ASSERT_EQ(result.columns_size(), static_cast<int>(names.size()));
+        for (std::size_t col = 0; col < names.size(); ++col)
+            EXPECT_EQ(result.columns(col).name(), names[col]) << col;
         EXPECT_EQ(result.rows(0).cells(0).value(), "左上角");
         EXPECT_EQ(result.rows(0).cells(1).type(), "Empty");
         EXPECT_EQ(result.rows(0).cells(2).type(), "Empty");
@@ -153,7 +151,7 @@ namespace
         OpenXLSX::XLDocument document;
         document.create(_file, false);
         auto sheet = document.workbook().worksheet("Sheet1");
-        for (unsigned col = 1; col <= 12; ++col)
+        for (unsigned col = 1; col <= 16; ++col)
             sheet.cell(1, col).value() = "header" + std::to_string(col);
 
         sheet.cell("A2").value() = " 123 ";
@@ -163,12 +161,11 @@ namespace
         sheet.cell("C4").value() = "n/A";
         sheet.cell("D2").value() = "1";
         sheet.cell("D3").value() = "0";
-        sheet.cell("E2").value() = "2024-02-29";
-        sheet.cell("E3").value() = "2024/02/29";
-        sheet.cell("E4").value() = "02-29-2024";
-        sheet.cell("E5").value() = "02/29/2024";
-        sheet.cell("E6").value() = "2024.02.29";
-        sheet.cell("F2").value() = "1900-02-29";
+        const char *const dates[]{"2024-02-29", "2024/02/29", "02-29-2024", "02/29/2024", "2024.02.29"};
+        unsigned row_number = 2;
+        for (const auto *date : dates)
+            sheet.cell(row_number++, 5).value() = date;
+        sheet.cell("F2").value() = "2023-02-29";
         sheet.cell("F3").value() = "04/31/2024";
         sheet.cell("G2").value() = "2024-02-29 23:59:59";
         sheet.cell("G3").value() = "2024-02-29 24:00:01";
@@ -180,22 +177,31 @@ namespace
         sheet.cell("J3").value() = "2024-02-29";
         sheet.cell("K2").value() = 45292;
         sheet.cell("L2").value() = 123.5;
+        sheet.cell("M2").value() = 0.15;
+        sheet.cell("N2").value() = 1234.5;
+        sheet.cell("O2").value() = 0;
+        sheet.cell("P2").value() = 1.5;
 
         auto &styles = document.styles();
-        const auto builtin = styles.cellFormats().create();
-        ASSERT_TRUE(styles.cellFormats()[builtin].setNumberFormatId(14));
-        ASSERT_TRUE(sheet.cell("J2").setCellFormat(builtin));
-        auto set_format = [&](const char *address, unsigned id, const char *format)
+        auto set_format = [&](const char *address, unsigned id, const char *format = nullptr)
         {
-            const auto index = styles.numberFormats().create();
-            ASSERT_TRUE(styles.numberFormats()[index].setNumberFormatId(id));
-            ASSERT_TRUE(styles.numberFormats()[index].setFormatCode(format));
+            if (format)
+            {
+                const auto index = styles.numberFormats().create();
+                ASSERT_TRUE(styles.numberFormats()[index].setNumberFormatId(id));
+                ASSERT_TRUE(styles.numberFormats()[index].setFormatCode(format));
+            }
             const auto style = styles.cellFormats().create();
             ASSERT_TRUE(styles.cellFormats()[style].setNumberFormatId(id));
             ASSERT_TRUE(sheet.cell(address).setCellFormat(style));
         };
+        set_format("J2", 14);
         set_format("K2", 165, "[>=1]yyyy-mm-dd;0");
         set_format("L2", 166, "0.00 \"days\"");
+        set_format("M2", 10);
+        set_format("N2", 167, "[$¥-804]#,##0.00");
+        set_format("O2", 168, "yyyy-mm-dd;0;@");
+        set_format("P2", 46);
         document.save();
         document.close();
 
@@ -203,7 +209,8 @@ namespace
         const auto &result = sheets.front();
         const std::vector<std::string> types{
             "DOUBLE", "TEXT", "BOOLEAN", "DOUBLE", "DATE", "TEXT",
-            "TEXT", "TEXT", "BOOLEAN", "TEXT", "TEXT", "DOUBLE"};
+            "TEXT", "TEXT", "BOOLEAN", "TEXT", "TEXT", "DOUBLE",
+            "DOUBLE", "DOUBLE", "TEXT", "TEXT"};
         ASSERT_EQ(result.columns_size(), static_cast<int>(types.size()));
         for (unsigned i = 0; i < types.size(); ++i)
             EXPECT_EQ(result.columns(i).type(), types[i]) << result.columns(i).name();
@@ -212,7 +219,61 @@ namespace
         EXPECT_EQ(result.rows(0).cells(2).value(), " YeS ");
         EXPECT_EQ(result.rows(0).cells(9).value(), "45292");
         EXPECT_EQ(result.rows(0).cells(9).type(), "Integer");
+        EXPECT_DOUBLE_EQ(std::stod(result.rows(0).cells(12).value()), 0.15);
+        EXPECT_EQ(result.rows(0).cells(13).value(), "1234.5");
+        EXPECT_EQ(result.rows(0).cells(14).value(), "0");
+        EXPECT_EQ(result.rows(0).cells(15).value(), "1.5");
         ASSERT_EQ(result.rows_size(), 101);
         EXPECT_EQ(result.rows(100).cells(8).value(), "第 101 个数据行");
+    }
+
+    TEST_F(ExcelRulesTest, ReadsInlineRichTextNativeDatesAndImplicitReferences)
+    {
+        OpenXLSX::XLDocument document;
+        document.create(_file, false);
+        document.close();
+
+        // 写入生成器实际可使用的 XML 形式，覆盖 OpenXLSX 写入接口未直接生成的单元格。
+        const char *worksheet = R"xml(
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row><c t="inlineStr"><is><t>表头</t></is></c></row>
+    <row>
+      <c t="inlineStr"><is><t xml:space="preserve"> 内联 </t></is></c>
+      <c t="inlineStr"><is><r><t>收</t></r><r><t>入</t></r></is></c>
+      <c><v>12345.67</v></c>
+      <c><v>1E+3</v></c>
+      <c t="d"><v>2024-02-29</v></c>
+      <c t="d"><v>2024-02-29T13:00:00</v></c>
+      <c t="b"><v>0</v></c>
+    </row>
+    <row r="4"><c r="C4"/><c><v>5</v></c></row>
+  </sheetData>
+</worksheet>)xml";
+        OpenXLSX::XLZipArchive archive;
+        archive.open(_file);
+        archive.deleteEntry("xl/worksheets/sheet1.xml");
+        archive.addEntry("xl/worksheets/sheet1.xml", worksheet);
+        archive.save(_file);
+        archive.close();
+
+        const auto sheets = ExcelParser::ParseExcel(_file, {"Sheet1"});
+        const auto &result = sheets.front();
+        ASSERT_EQ(result.rows_size(), 3);
+        ASSERT_EQ(result.columns_size(), 7);
+        const auto &row = result.rows(0);
+        EXPECT_EQ(row.cells(0).value(), " 内联 ");
+        EXPECT_EQ(row.cells(1).value(), "收入");
+        EXPECT_EQ(row.cells(2).type(), "Float");
+        EXPECT_DOUBLE_EQ(std::stod(row.cells(2).value()), 12345.67);
+        EXPECT_EQ(row.cells(3).value(), "1000");
+        EXPECT_EQ(result.columns(4).type(), "DATE");
+        EXPECT_EQ(row.cells(4).type(), "String");
+        EXPECT_EQ(row.cells(4).value(), "2024-02-29");
+        EXPECT_EQ(row.cells(5).value(), "2024-02-29T13:00:00");
+        EXPECT_EQ(row.cells(6).type(), "Boolean");
+        EXPECT_EQ(row.cells(6).value(), "0");
+        EXPECT_EQ(result.rows(1).cells(3).type(), "Empty");
+        EXPECT_EQ(result.rows(2).cells(3).value(), "5");
     }
 }

@@ -2,6 +2,7 @@
 
 #include "errorHandler.hpp"
 #include "excelColumn.hpp"
+#include "utils.hpp"
 
 #include <OpenXLSX.hpp>
 #include <XLXmlParser.hpp>
@@ -21,6 +22,7 @@ namespace chat2data
     {
         using chat2Data::Chat2DataException;
         using chat2Data::ErrorCode;
+        using chat2Data::Utils;
         using chat2Data::WorksheetData;
         using OpenXLSX::XLValueType;
 
@@ -79,7 +81,7 @@ namespace chat2data
             bool date_serial = false;
         };
 
-        // 读取工作簿的样式信息，样式信息一般为自定义格式，内置格式可通过 ID 识别
+        // 通过工作簿样式查找数字格式，格式可由工作簿自定义，也可按内置 ID 识别。
         class WorkbookNumberFormats
         {
         public:
@@ -96,7 +98,7 @@ namespace chat2data
             // 根据单元格样式索引和数值识别日期和时间格式，返回 Skip 表示非日期类型。
             ExcelSampleType Classify(std::size_t style, double number) const
             {
-                // 样式索引超出范围表示单元格未设置样式，按普通数值处理
+                // 样式索引超出范围时按普通数值处理。
                 if (style >= _cell_formats.count())
                     return ExcelSampleType::Skip;
                 const auto id = _cell_formats[style].numberFormatId();
@@ -110,6 +112,12 @@ namespace chat2data
             std::unordered_map<unsigned, std::string> _custom_formats; // ID 到格式字符串的映射
         };
 
+        ParsedCell ReadText(std::string text, bool sample)
+        {
+            const auto type = sample ? ClassifyExcelText(text) : ExcelSampleType::Skip;
+            return {"String", std::move(text), type};
+        }
+
         // 解析单元格，返回类型、值、样本类型和日期序列标识
         ParsedCell ReadCell(const OpenXLSX::XMLNode &node, const OpenXLSX::XLSharedStrings &strings, const WorkbookNumberFormats &formats, bool sample)
         {
@@ -117,8 +125,32 @@ namespace chat2data
             const std::string_view raw(cached.text().get());
             const std::string_view xml_type(node.attribute("t").value());
             // 公式只读取已保存的结果。带 str 类型的空值节点可表示缓存的空字符串。
-            if (node.child("f") && (!cached || (raw.empty() && xml_type != "str")))
+            if (xml_type == "inlineStr" && !node.child("f"))
+            {
+                const auto content = node.child("is");
+                if (!content)
+                    return {"Empty", {}};
+                std::string text(content.child("t").text().get());
+                // 富文本的可见内容按 r 节点顺序拼接，注音与字形样式独立存放。
+                for (auto run = content.child("r"); run; run = run.next_sibling("r"))
+                    text += run.child("t").text().get();
+                return ReadText(std::move(text), sample);
+            }
+            if (!cached || (raw.empty() && xml_type != "str"))
                 return {"Empty", {}};
+
+            // 协议用 String 承载原生 ISO 日期文本。
+            if (xml_type == "d")
+                return ReadText(std::string(raw), sample);
+            if (xml_type == "s")
+            {
+                std::int32_t index = 0;
+                const auto end = raw.data() + raw.size();
+                const auto parsed = std::from_chars(raw.data(), end, index);
+                if (parsed.ec != std::errc{} || parsed.ptr != end || index < 0 || index >= strings.stringCount())
+                    throw Chat2DataException(ErrorCode::EXCEL_PARSE_FAILED);
+                return ReadText(strings.getString(index), sample);
+            }
 
             const OpenXLSX::XLCell cell(node, strings);
             const auto &value = cell.value();
@@ -127,25 +159,37 @@ namespace chat2data
             case XLValueType::Empty:
                 return {"Empty", {}};
             case XLValueType::Boolean:
-                return {"Boolean", value.get<bool>() ? "1" : "0", ExcelSampleType::Boolean};
+                if (raw == "1" || raw == "true")
+                    return {"Boolean", "1", ExcelSampleType::Boolean};
+                if (raw == "0" || raw == "false")
+                    return {"Boolean", "0", ExcelSampleType::Boolean};
+                throw Chat2DataException(ErrorCode::EXCEL_PARSE_FAILED);
             case XLValueType::Integer:
             case XLValueType::Float:
             {
                 // 某些 Excel 生成器使用不含小数点的科学计数法，按原始文本完整读取。
-                const bool floating = value.type() == XLValueType::Float || raw.find_first_of("eE") != raw.npos;
-                std::int64_t integer;
-                double number;
-                auto numeric_text = raw;
-                if (!numeric_text.empty() && numeric_text.front() == '+')
-                    numeric_text.remove_prefix(1);
-                if (numeric_text.empty())
-                    return {"Empty", {}};
-                const auto end = numeric_text.data() + numeric_text.size();
-                const auto parsed = floating ? std::from_chars(numeric_text.data(), end, number) : std::from_chars(numeric_text.data(), end, integer);
-                if (parsed.ec != std::errc{} || parsed.ptr != end)
-                    throw Chat2DataException(ErrorCode::EXCEL_PARSE_FAILED);
+                bool floating = value.type() == XLValueType::Float || raw.find_first_of("eE") != raw.npos;
+                std::int64_t integer = 0;
+                double number = 0;
                 if (!floating)
+                {
+                    auto digits = raw;
+                    if (digits.front() == '+')
+                    {
+                        digits.remove_prefix(1);
+                        if (digits.empty() || !Utils::IsAsciiDigit(digits.front()))
+                            throw Chat2DataException(ErrorCode::EXCEL_PARSE_FAILED);
+                    }
+                    const auto end = digits.data() + digits.size();
+                    const auto parsed = std::from_chars(digits.data(), end, integer);
+                    if (parsed.ptr != end || parsed.ec == std::errc::invalid_argument)
+                        throw Chat2DataException(ErrorCode::EXCEL_PARSE_FAILED);
+                    // Excel 的数值范围大于 int64，超出整数范围时按 double 读取。
+                    floating = parsed.ec == std::errc::result_out_of_range;
                     number = static_cast<double>(integer);
+                }
+                if (floating && !Utils::ParseFiniteDouble(raw, number))
+                    throw Chat2DataException(ErrorCode::EXCEL_PARSE_FAILED);
 
                 // 识别日期样式用于推断列类型，响应保留数值类型及 Excel 日期序列原文。
                 const auto date = formats.Classify(cell.cellFormat(), number);
@@ -157,11 +201,7 @@ namespace chat2data
                 return {type, floating ? FormatDouble(number) : std::to_string(integer), numeric};
             }
             case XLValueType::String:
-            {
-                auto text = value.get<std::string>();
-                const auto type = sample ? ClassifyExcelText(text) : ExcelSampleType::Skip;
-                return {"String", std::move(text), type};
-            }
+                return ReadText(value.get<std::string>(), sample);
             case XLValueType::Error:
                 return {"Error", value.get<std::string>()};
             }
@@ -172,15 +212,22 @@ namespace chat2data
         template <typename Visit>
         void VisitCells(const OpenXLSX::XMLNode &data, const OpenXLSX::XLMergeCells &merges, Visit visit)
         {
+            std::uint32_t row_number = 0;
             for (auto row = data.child("row"); row; row = row.next_sibling("row"))
             {
+                row_number = row.attribute("r").as_uint(row_number + 1);
+                std::uint16_t column = 0;
                 for (auto node = row.child("c"); node; node = node.next_sibling("c"))
                 {
+                    // 省略坐标时沿上一行或上一列顺序定位。
+                    const auto reference = node.attribute("r");
+                    const auto address = reference ? OpenXLSX::XLCellReference(reference.value())
+                                                   : OpenXLSX::XLCellReference(row_number, column + 1);
+                    column = address.column();
                     // 保留显式记录的空单元格，只有样式的单元格留在数据范围之外。
                     if (node.attribute("s") && !node.child("v") && !node.child("is") && !node.child("f"))
                         continue;
 
-                    const OpenXLSX::XLCellReference address(node.attribute("r").value());
                     const auto merge = merges.findMergeByCell(address);
                     auto last = address;
                     if (merge != OpenXLSX::XLMergeNotFound)
@@ -282,7 +329,7 @@ namespace chat2data
         auto workbook = document.workbook();
         // 2.建立数字格式与样式映射，如果为自定义格式则保存格式字符串，内置格式按 ID 识别日期和时间。
         const WorkbookNumberFormats formats(document.styles());
-        // 3.按请求顺序解析工作薄
+        // 3.按请求顺序解析工作表
         std::vector<WorksheetData> result;
         result.reserve(worksheets.size());
         for (const auto &name : worksheets)
