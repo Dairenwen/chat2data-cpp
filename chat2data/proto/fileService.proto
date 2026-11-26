@@ -5,8 +5,8 @@ option cc_generic_services = true;
 // Excel 上传登记所需的元数据。
 message FileInfo {
   string file_name = 1; // 原始文件名。
-  int64 file_size = 2;  // 申报大小，单位为字节，最大 10 MiB。
-  string file_ext = 3;  // Excel 上传使用 xlsx。
+  int64  file_size = 2;  // 申报大小，单位为字节，最大 10 MiB。
+  string file_ext  = 3;  // Excel 上传使用 xlsx
 }
 
 // 上传接口共用的业务文件标识。
@@ -16,98 +16,98 @@ message FileIdResult {
 
 // 登记待上传的 Excel 文件并分配业务文件 ID。
 message UploadFileInfoRequest {
-  string request_id = 1;  // 请求 ID，用于关联请求和日志。
-  string session_id = 2;  // 发起操作的登录会话 ID。
-  FileInfo file_info = 3; // Excel 文件名称、申报大小和后缀。
-  string user_id = 4;     // 调用方鉴权得到的用户 ID，用于校验文件归属。
+  string   request_id = 1;  // 请求 ID，用于关联请求和日志。
+  string   session_id = 2;  // 发起操作的登录会话 ID。
+  FileInfo file_info  = 3; // Excel 文件名称、申报大小和后缀。
+  string   user_id    = 4;     // 调用方鉴权得到的用户 ID，用于校验文件归属。
 }
 
 message UploadFileInfoResponse {
-  string request_id = 1;   // 对应的请求 ID。
-  int32 error_code = 2;    // 业务错误码，0 表示成功。
-  string error_msg = 3;    // 错误描述，成功时为空。
-  FileIdResult result = 4; // 成功时返回的业务结果。
+  string       request_id = 1;   // 对应的请求 ID。
+  int32        error_code = 2;    // 业务错误码，0 表示成功。
+  string       error_msg  = 3;    // 错误描述，成功时为空。
+  FileIdResult result     = 4; // 成功时返回的业务结果。
 }
 
 // 读取当前用户已就绪的文件元数据。
 message GetFileInfoRequest {
   string request_id = 1; // 请求 ID，用于关联请求和日志。
   string session_id = 2; // 发起操作的登录会话 ID。
-  string file_id = 3;    // 业务文件 ID。
-  string user_id = 4;    // 调用方鉴权得到的用户 ID，用于校验文件归属。
+  string file_id    = 3;    // 业务文件 ID。
+  string user_id    = 4;    // 调用方鉴权得到的用户 ID，用于校验文件归属。
 }
 
 // 已就绪文件的详细信息。
 message FileDetail {
-  string file_id = 1;    // 业务文件 ID。
-  string file_name = 2;  // 原始文件名。
-  int64 file_size = 3;   // 文件大小，单位为字节。
-  int64 upload_time = 4; // 文件进入就绪状态的 Unix 毫秒时间戳。
-  string file_ext = 5;   // 不带点号的小写后缀。
+  string file_id     = 1;    // 业务文件 ID。
+  string file_name   = 2;  // 原始文件名。
+  int64  file_size   = 3;   // 文件大小，单位为字节。
+  int64  upload_time = 4; // 文件进入就绪状态的 Unix 毫秒时间戳。
+  string file_ext    = 5;   // 不带点号的小写后缀。
 }
 
 message GetFileInfoResponse {
-  string request_id = 1; // 对应的请求 ID。
-  int32 error_code = 2;  // 业务错误码，0 表示成功。
-  string error_msg = 3;  // 错误描述，成功时为空。
-  FileDetail result = 4; // 成功时返回的业务结果。
+  string     request_id = 1; // 对应的请求 ID。
+  int32      error_code = 2;  // 业务错误码，0 表示成功。
+  string     error_msg  = 3;  // 错误描述，成功时为空。
+  FileDetail result     = 4; // 成功时返回的业务结果。
 }
 
 // 上传 Excel 原件，并完成工作表导入。文件字节通过 brpc 请求附件传入。
 message UploadFileRequest {
   string request_id = 1; // 请求 ID，用于关联请求和日志。
   string session_id = 2; // 发起操作的登录会话 ID。
-  string file_id = 3;    // UploadFileInfo 分配的业务文件 ID。
-  string user_id = 4;    // 调用方鉴权得到的用户 ID，用于校验文件归属。
+  string file_id    = 3;    // UploadFileInfo 分配的业务文件 ID。
+  string user_id    = 4;    // 调用方鉴权得到的用户 ID，用于校验文件归属。
 }
 
 message UploadFileResponse {
-  string request_id = 1;   // 对应的请求 ID。
-  int32 error_code = 2;    // 业务错误码，0 表示成功。
-  string error_msg = 3;    // 错误描述，成功时为空。
-  FileIdResult result = 4; // 成功时返回的业务结果。
+  string       request_id = 1;   // 对应的请求 ID。
+  int32        error_code = 2;    // 业务错误码，0 表示成功。
+  string       error_msg  = 3;    // 错误描述，成功时为空。
+  FileIdResult result     = 4; // 成功时返回的业务结果。
 }
 
 // 下载当前用户文件的原件。
 message DownloadFileRequest {
   string request_id = 1; // 请求 ID，用于关联请求和日志。
   string session_id = 2; // 发起操作的登录会话 ID。
-  string file_id = 3;    // 业务文件 ID。
-  string user_id = 4;    // 调用方鉴权得到的用户 ID，用于校验文件归属。
+  string file_id    = 3;    // 业务文件 ID。
+  string user_id    = 4;    // 调用方鉴权得到的用户 ID，用于校验文件归属。
 }
 
 // 下载成功时，通过 brpc 响应附件返回原始文件字节。
 message DownloadFileResponse {
   string request_id = 1; // 对应的请求 ID。
-  int32 error_code = 2;  // 业务错误码，0 表示成功。
-  string error_msg = 3;  // 错误描述，成功时为空。
-  string file_name = 4;  // 成功时返回，供网关设置下载文件名。
+  int32  error_code = 2;  // 业务错误码，0 表示成功。
+  string error_msg  = 3;  // 错误描述，成功时为空。
+  string file_name  = 4;  // 成功时返回，供网关设置下载文件名。
 }
 
 // 清理文件及其关联资源，可使用原文件 ID 重试。
 message DeleteFileRequest {
   string request_id = 1; // 请求 ID，用于关联请求和日志。
   string session_id = 2; // 发起操作的登录会话 ID。
-  string file_id = 3;    // 业务文件 ID。
-  string user_id = 4;    // 调用方鉴权得到的用户 ID，用于校验文件归属。
+  string file_id    = 3;    // 业务文件 ID。
+  string user_id    = 4;    // 调用方鉴权得到的用户 ID，用于校验文件归属。
 }
 
 // 全部关联资源清理完成后才报告业务成功。
 message DeleteFileResponse {
   string request_id = 1; // 对应的请求 ID。
-  int32 error_code = 2;  // 业务错误码，0 表示成功。
-  string error_msg = 3;  // 错误描述，成功时为空。
+  int32  error_code = 2;  // 业务错误码，0 表示成功。
+  string error_msg  = 3;  // 错误描述，成功时为空。
 }
 
 // 按工作表预览已导入的数据。
 message PreviewExcelRequest {
-  string request_id = 1; // 请求 ID，用于关联请求和日志。
-  string session_id = 2; // 发起操作的登录会话 ID。
-  string file_id = 3;    // 业务文件 ID。
-  int32 page_number = 4; // 从 1 开始，0 取默认值 1。未指定工作表时，每张表均取第 1 页。
-  int32 page_size = 5;   // 每页数据行数，0 取默认值 50，允许 1 至 100。
-  string user_id = 6;    // 调用方鉴权得到的用户 ID，用于校验文件归属。
-  string sheet_name = 7; // 工作表原名，空值表示返回各工作表第一页。
+  string request_id  = 1; // 请求 ID，用于关联请求和日志。
+  string session_id  = 2; // 发起操作的登录会话 ID。
+  string file_id     = 3;    // 业务文件 ID。
+  int32  page_number = 4; // 从 1 开始，0 取默认值 1。未指定工作表时，每张表均取第 1 页。
+  int32  page_size   = 5;   // 每页数据行数，0 取默认值 50，允许 1 至 100。
+  string user_id     = 6;    // 调用方鉴权得到的用户 ID，用于校验文件归属。
+  string sheet_name  = 7; // 工作表原名，空值表示返回各工作表第一页。
 }
 
 // 一个预览数据行。
@@ -117,14 +117,14 @@ message FilePreviewRow {
 
 // 工作表的列信息和一页数据。
 message FilePreviewSheet {
-  string name = 1;                  // 工作表原名。
-  int64 total_rows = 2;             // 工作表的数据行总数，表头单独放在 columns。
-  int32 col_count = 3;              // 用户列数量。
-  int32 current_page = 4;           // 返回的数据页号，从 1 开始。
-  int64 total_pages = 5;            // 数据页总数，只有表头的工作表返回 1。
-  int32 page_size = 6;              // 实际使用的页大小。
-  repeated FilePreviewRow data = 7; // 按原始 Excel 行序排列的当页数据。
-  repeated string columns = 8;      // 按导入顺序排列的用户列名。
+  string                  name         = 1;                  // 工作表原名。
+  int64                   total_rows   = 2;             // 工作表的数据行总数，表头单独放在 columns。
+  int32                   col_count    = 3;              // 用户列数量。
+  int32                   current_page = 4;           // 返回的数据页号，从 1 开始。
+  int64                   total_pages  = 5;            // 数据页总数，只有表头的工作表返回 1。
+  int32                   page_size    = 6;              // 实际使用的页大小。
+  repeated FilePreviewRow data         = 7; // 按原始 Excel 行序排列的当页数据。
+  repeated string         columns      = 8;      // 按导入顺序排列的用户列名。
 }
 
 // Excel 预览的工作表集合。
@@ -133,33 +133,33 @@ message FilePreviewExcelData {
 }
 
 message PreviewExcelResult {
-  string file_id = 1;                  // 业务文件 ID。
-  string file_name = 2;                // 原始文件名。
-  int64 file_size = 3;                 // 文件大小，单位为字节。
-  string file_ext = 4;                 // 不带点号的小写后缀。
+  string               file_id    = 1;                  // 业务文件 ID。
+  string               file_name  = 2;                // 原始文件名。
+  int64                file_size  = 3;                 // 文件大小，单位为字节。
+  string               file_ext   = 4;                 // 不带点号的小写后缀。
   FilePreviewExcelData excel_data = 5; // 指定工作表或各工作表的分页结果。
 }
 
 message PreviewExcelResponse {
-  string request_id = 1;         // 对应的请求 ID。
-  int32 error_code = 2;          // 业务错误码，0 表示成功。
-  string error_msg = 3;          // 错误描述，成功时为空。
-  PreviewExcelResult result = 4; // 成功时返回的业务结果。
+  string             request_id = 1;         // 对应的请求 ID。
+  int32              error_code = 2;          // 业务错误码，0 表示成功。
+  string             error_msg  = 3;          // 错误描述，成功时为空。
+  PreviewExcelResult result     = 4; // 成功时返回的业务结果。
 }
 
 // 列出当前用户的已就绪文件。
 message GetFileListRequest {
   string request_id = 1; // 请求 ID，用于关联请求和日志。
   string session_id = 2; // 发起操作的登录会话 ID。
-  string user_id = 3;    // 调用方鉴权得到的用户 ID，用于校验文件归属。
+  string user_id    = 3;    // 调用方鉴权得到的用户 ID，用于校验文件归属。
 }
 
 // 文件列表中的一条已就绪记录。
 message FileListItem {
-  string file_id = 1;    // 业务文件 ID。
-  string file_name = 2;  // 原始文件名。
-  int64 file_size = 3;   // 文件大小，单位为字节。
-  int64 upload_time = 4; // 文件进入就绪状态的 Unix 毫秒时间戳。
+  string file_id     = 1;    // 业务文件 ID。
+  string file_name   = 2;  // 原始文件名。
+  int64  file_size   = 3;   // 文件大小，单位为字节。
+  int64  upload_time = 4; // 文件进入就绪状态的 Unix 毫秒时间戳。
 }
 
 message GetFileListResult {
@@ -167,48 +167,48 @@ message GetFileListResult {
 }
 
 message GetFileListResponse {
-  string request_id = 1;        // 对应的请求 ID。
-  int32 error_code = 2;         // 业务错误码，0 表示成功。
-  string error_msg = 3;         // 错误描述，成功时为空。
-  GetFileListResult result = 4; // 成功时返回的业务结果。
+  string            request_id = 1;        // 对应的请求 ID。
+  int32             error_code = 2;         // 业务错误码，0 表示成功。
+  string            error_msg  = 3;         // 错误描述，成功时为空。
+  GetFileListResult result     = 4; // 成功时返回的业务结果。
 }
 
 // 将已就绪的 Excel 文件关联到指定会话。
 message HandleFileChatSessionMapRequest {
-  string request_id = 1;      // 请求 ID，用于关联请求和日志。
-  string session_id = 2;      // 发起操作的登录会话 ID。
-  string file_id = 3;         // 业务文件 ID。
+  string request_id      = 1;      // 请求 ID，用于关联请求和日志。
+  string session_id      = 2;      // 发起操作的登录会话 ID。
+  string file_id         = 3;         // 业务文件 ID。
   string chat_session_id = 4; // 要关联文件的业务聊天会话 ID。
-  string user_id = 5;         // 调用方鉴权得到的用户 ID，用于校验文件归属。
+  string user_id         = 5;         // 调用方鉴权得到的用户 ID，用于校验文件归属。
 }
 
 message HandleFileChatSessionMapResponse {
   string request_id = 1; // 对应的请求 ID。
-  int32 error_code = 2;  // 业务错误码，0 表示成功。
-  string error_msg = 3;  // 错误描述，成功时为空。
+  int32  error_code = 2;  // 业务错误码，0 表示成功。
+  string error_msg  = 3;  // 错误描述，成功时为空。
 }
 
 // 上传 SQLite 原件并保存文件元数据。brpc 请求附件最大 10 MiB。
 message UploadSQLiteFileRequest {
   string request_id = 1; // 请求 ID，用于关联请求和日志。
   string session_id = 2; // 发起操作的登录会话 ID。
-  string filename = 3;   // SQLite 文件原名，扩展名为 .db。
-  string user_id = 4;    // 调用方鉴权得到的用户 ID，用于校验文件归属。
+  string filename   = 3;   // SQLite 文件原名，扩展名为 .db。
+  string user_id    = 4;    // 调用方鉴权得到的用户 ID，用于校验文件归属。
 }
 
 message UploadSQLiteFileResponse {
-  string request_id = 1;   // 对应的请求 ID。
-  int32 error_code = 2;    // 业务错误码，0 表示成功。
-  string error_msg = 3;    // 错误描述，成功时为空。
-  FileIdResult result = 4; // 成功时返回的业务结果。
+  string       request_id = 1;   // 对应的请求 ID。
+  int32        error_code = 2;    // 业务错误码，0 表示成功。
+  string       error_msg  = 3;    // 错误描述，成功时为空。
+  FileIdResult result     = 4; // 成功时返回的业务结果。
 }
 
 // 向存储子服务提供已就绪 SQLite 文件的 FastDFS ID。
 message GetSQLiteFileRequest {
   string request_id = 1; // 请求 ID，用于关联请求和日志。
   string session_id = 2; // 发起操作的登录会话 ID。
-  string file_id = 3;    // 业务文件 ID。
-  string user_id = 4;    // 调用方鉴权得到的用户 ID，用于校验文件归属。
+  string file_id    = 3;    // 业务文件 ID。
+  string user_id    = 4;    // 调用方鉴权得到的用户 ID，用于校验文件归属。
 }
 
 message GetSQLiteFileResult {
@@ -216,18 +216,18 @@ message GetSQLiteFileResult {
 }
 
 message GetSQLiteFileResponse {
-  string request_id = 1;          // 对应的请求 ID。
-  int32 error_code = 2;           // 业务错误码，0 表示成功。
-  string error_msg = 3;           // 错误描述，成功时为空。
-  GetSQLiteFileResult result = 4; // 成功时返回的业务结果。
+  string              request_id = 1;          // 对应的请求 ID。
+  int32               error_code = 2;           // 业务错误码，0 表示成功。
+  string              error_msg  = 3;           // 错误描述，成功时为空。
+  GetSQLiteFileResult result     = 4; // 成功时返回的业务结果。
 }
 
 // 向 AI 子服务提供已导入工作表的实际表名。
 message GetWorksheetDBTablesRequest {
   string request_id = 1; // 请求 ID，用于关联请求和日志。
   string session_id = 2; // 发起操作的登录会话 ID。
-  string file_id = 3;    // 业务文件 ID。
-  string user_id = 4;    // 调用方鉴权得到的用户 ID，用于校验文件归属。
+  string file_id    = 3;    // 业务文件 ID。
+  string user_id    = 4;    // 调用方鉴权得到的用户 ID，用于校验文件归属。
 }
 
 message GetWorksheetDBTablesResult {
@@ -235,10 +235,10 @@ message GetWorksheetDBTablesResult {
 }
 
 message GetWorksheetDBTablesResponse {
-  string request_id = 1;                 // 对应的请求 ID。
-  int32 error_code = 2;                  // 业务错误码，0 表示成功。
-  string error_msg = 3;                  // 错误描述，成功时为空。
-  GetWorksheetDBTablesResult result = 4; // 成功时返回的业务结果。
+  string                     request_id = 1;                 // 对应的请求 ID。
+  int32                      error_code = 2;                  // 业务错误码，0 表示成功。
+  string                     error_msg  = 3;                  // 错误描述，成功时为空。
+  GetWorksheetDBTablesResult result     = 4; // 成功时返回的业务结果。
 }
 
 service FileService {
