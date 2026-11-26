@@ -25,7 +25,7 @@ namespace
         {
             // 回环 RPC 执行真实业务与解析代码，下载入口提供可重复的文件和部分写入失败。
             chat2data::ExcelParserBusiness business([this](const std::string &id, const std::string &path)
-                                                   { return Download(id, path); });
+                                                    { return Download(id, path); });
             _service = std::make_unique<chat2data::ExcelParserServiceImpl>(std::move(business));
             ASSERT_EQ(_server.AddService(_service.get(), brpc::SERVER_DOESNT_OWN_SERVICE), 0);
 
@@ -85,8 +85,7 @@ namespace
             }
 
             const auto fixture = id == kWorkbook ? "multipleWorksheets.xlsx" : "corruptWorkbook.xlsx";
-            return std::filesystem::copy_file(std::filesystem::path(EXCEL_TEST_FIXTURES) / fixture, path,
-                                              std::filesystem::copy_options::overwrite_existing);
+            return std::filesystem::copy_file(std::filesystem::path(EXCEL_TEST_FIXTURES) / fixture, path, std::filesystem::copy_options::overwrite_existing);
         }
 
         std::mutex _download_mutex;
