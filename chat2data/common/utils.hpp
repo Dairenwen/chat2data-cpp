@@ -48,6 +48,12 @@ namespace chat2Data
         // 在 UTF-8 字符边界截取前 character_count 个字符，返回原文本视图。
         static std::string_view Utf8Prefix(std::string_view text, std::size_t character_count) noexcept;
 
+        // 校验 UTF-8 编码，并检查字符数是否在上限内。
+        static bool IsValidUtf8Length(std::string_view text, std::size_t max_characters) noexcept;
+
+        // 校验 FastDFS 文件 ID 的组名和远端路径格式。
+        static bool IsCompleteFastDfsId(std::string_view file_id) noexcept;
+
         // 完整解析有限十进制数，支持符号和科学计数法，成功时写入 value。
         static bool ParseFiniteDouble(std::string_view text, double &value) noexcept;
 

@@ -29,6 +29,23 @@ namespace chat2Data
             {ErrorCode::USER_SERVICE_DISCOVERY_FAILED, "用户服务发现启动失败"},
             {ErrorCode::USER_SERVICE_REGISTRATION_FAILED, "用户服务注册失败"},
             // 文件子服务错误描述。
+            {ErrorCode::FILE_INVALID_INPUT, "文件请求参数无效"},
+            {ErrorCode::FILE_UNAVAILABLE, "文件不可用"},
+            {ErrorCode::FILE_BUSY, "文件处理中，请稍后重试"},
+            {ErrorCode::FILE_ALREADY_UPLOADED, "文件已上传"},
+            {ErrorCode::FILE_UPLOAD_EXPIRED, "文件上传登记已过期，请重新登记"},
+            {ErrorCode::FILE_STORAGE_FAILED, "访问 FastDFS 失败"},
+            {ErrorCode::FILE_PARSE_FAILED, "解析 Excel 文件失败"},
+            {ErrorCode::FILE_DEPENDENCY_FAILED, "文件处理所需的下游服务不可用或调用失败"},
+            {ErrorCode::FILE_SQLITE_IN_USE, "请先断开 SQLite 连接再删除文件"},
+            {ErrorCode::FILE_PREVIEW_TOO_LARGE, "预览数据量过大，请指定工作表或减小页容量"},
+            {ErrorCode::FILE_CACHE_FAILED, "文件缓存操作失败"},
+            {ErrorCode::FILE_BUSINESS_FAILED, "文件业务处理失败"},
+            {ErrorCode::FILE_SERVER_CONFIG_INVALID, "文件服务启动配置无效"},
+            {ErrorCode::FILE_ETCD_CONNECTION_FAILED, "无法连接文件服务的 etcd 端点"},
+            {ErrorCode::FILE_SERVER_START_FAILED, "文件服务启动失败"},
+            {ErrorCode::FILE_SERVICE_DISCOVERY_FAILED, "文件服务发现启动失败"},
+            {ErrorCode::FILE_SERVICE_REGISTRATION_FAILED, "文件服务注册失败"},
             // 数据库子服务错误描述。
             // Excel 解析子服务错误描述。
             {ErrorCode::EXCEL_INVALID_INPUT, "Excel 解析请求参数无效"},

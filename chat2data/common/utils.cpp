@@ -181,6 +181,54 @@ namespace chat2Data
         return text.substr(0, bytes);
     }
 
+    bool Utils::IsValidUtf8Length(std::string_view text, std::size_t max_characters) noexcept
+    {
+        while (!text.empty())
+        {
+            if (max_characters == 0)
+                return false;
+            --max_characters;
+
+            const auto width = Utf8CharWidth(text);
+            const auto first = static_cast<unsigned char>(text.front());
+            if (width == 1 && first >= 0x80)
+                return false;
+            if (width >= 3)
+            {
+                // 限制编码范围，排除过长编码、代理区和 Unicode 范围外的值。
+                const auto second = static_cast<unsigned char>(text[1]);
+                if ((first == 0xE0 && second < 0xA0) || (first == 0xED && second >= 0xA0) ||
+                    (first == 0xF0 && second < 0x90) || (first == 0xF4 && second >= 0x90))
+                    return false;
+            }
+            text.remove_prefix(width);
+        }
+        return true;
+    }
+
+    bool Utils::IsCompleteFastDfsId(std::string_view file_id) noexcept
+    {
+        if (file_id.find('/') == std::string_view::npos)
+            return false;
+        for (const unsigned char ch : file_id)
+        {
+            if (ch <= 0x20 || ch == 0x7f || ch == '\\')
+                return false;
+        }
+
+        // 完整 ID 由组名和远端路径组成，每段都应是有效的名称。
+        for (;;)
+        {
+            const auto slash = file_id.find('/');
+            const auto part = file_id.substr(0, slash);
+            if (part.empty() || part == "." || part == "..")
+                return false;
+            if (slash == std::string_view::npos)
+                return true;
+            file_id.remove_prefix(slash + 1);
+        }
+    }
+
     bool Utils::ParseFiniteDouble(std::string_view text, double &value) noexcept
     {
         // from_chars 自身支持负号。单独跳过前导加号，并要求数字只使用一个符号。

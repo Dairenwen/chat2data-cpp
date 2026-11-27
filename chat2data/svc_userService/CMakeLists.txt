@@ -54,7 +54,7 @@ if(BUILD_TESTING)
     )
     set_target_properties(user_test_support PROPERTIES CXX_EXTENSIONS OFF)
     target_include_directories(user_test_support PUBLIC "${BREEZEKIT_SOURCE_DIR}/source")
-    target_compile_definitions(user_test_support INTERFACE USER_DATA_SCHEMA="${PROJECT_SOURCE_DIR}/data/sql/create_tables.sql")
+    target_compile_definitions(user_test_support INTERFACE USER_DATA_SCHEMA="${PROJECT_SOURCE_DIR}/data/sql/create_user_tables.sql")
     target_link_libraries(user_test_support PUBLIC user_data GTest::gtest gflags)
     add_dependencies(user_test_support user_schema)
 
