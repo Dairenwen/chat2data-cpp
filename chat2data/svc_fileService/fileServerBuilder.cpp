@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <limits>
 #include <netdb.h>
 #include <utility>
 
@@ -86,6 +87,8 @@ namespace chat2data
         server->_listener = std::make_unique<brpc::Server>();
         brpc::ServerOptions options;
         options.has_builtin_services = false;
+        // 上传和删除可跨 RPC 持有一条 MySQL 连接。限制在途请求数，避免工作线程阻塞在连接池上。
+        options.max_concurrency = static_cast<int>(std::min(_config.mysql.connection_pool_size, static_cast<unsigned>(std::numeric_limits<int>::max())));
         if (server->_listener->AddService(server->_service.get(), brpc::SERVER_DOESNT_OWN_SERVICE) != 0 || server->_listener->Start(_config.port, &options) != 0)
             throw Chat2DataException(ErrorCode::FILE_SERVER_START_FAILED);
 

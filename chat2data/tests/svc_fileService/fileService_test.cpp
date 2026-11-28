@@ -16,9 +16,11 @@
 #include <algorithm>
 #include <chrono>
 #include <fstream>
+#include <functional>
 #include <future>
 #include <iterator>
 #include <map>
+#include <mutex>
 #include <set>
 #include <thread>
 
@@ -38,74 +40,165 @@ namespace
     constexpr char kOwner[] = "file-test-owner";
     constexpr char kWorkbook[] = "Excel test bytes";
 
-    // 提供解析、存储和 AI 的业务替身，原件操作由测试夹具单独提供。
+    // 按文件记录模拟入库的工作表和会话关联，预览从同一份导入数据读取。
     class DownstreamStub final : public FileDownstream
     {
     public:
-        std::vector<WorksheetData> ParseWorkbook(const std::string &, const std::string &) override
+        explicit DownstreamStub(std::unique_ptr<FileDownstream> parser = nullptr)
+            : _parser(std::move(parser))
         {
+        }
+
+        std::vector<WorksheetData> ParseWorkbook(const std::string &request_id, const std::string &fdfs_id) override
+        {
+            if (_parser)
+                return _parser->ParseWorkbook(request_id, fdfs_id);
+
             std::vector<WorksheetData> sheets(2);
             sheets[0].set_name("汇总");
             sheets[1].set_name("明细");
             for (auto &sheet : sheets)
             {
-                sheet.add_columns()->set_name("金额");
-                sheet.add_rows()->add_cells()->set_value("10");
-                sheet.set_total_rows(2);
+                auto *column = sheet.add_columns();
+                column->set_name("金额");
+                column->set_type("BIGINT");
+                sheet.set_total_cols(1);
             }
+            for (int value = 1; value <= 3; ++value)
+            {
+                auto *cell = sheets[0].add_rows()->add_cells();
+                cell->set_value(std::to_string(value));
+                cell->set_type("Integer");
+            }
+            for (auto &sheet : sheets)
+                sheet.set_total_rows(sheet.rows_size() + 1);
             return sheets;
         }
 
-        std::vector<WorksheetMapping> ImportExcelData(const FileInfoEntity &file, const std::vector<WorksheetData> &sheets, bool &import_started) override
+        std::vector<WorksheetMapping> ImportExcelData(const FileInfoEntity &file,
+                                                      const std::vector<WorksheetData> &sheets,
+                                                      bool &import_started) override
         {
             EXPECT_EQ(file.status, kFileUploading);
             EXPECT_EQ(file.userId, kOwner);
             EXPECT_FALSE(file.fileId.empty());
             EXPECT_TRUE(file.fdfsFileId);
-            EXPECT_EQ(sheets[0].rows_size(), 1);
             import_started = true;
+            if (before_import)
+                before_import(file);
+
+            std::vector<WorksheetMapping> mappings;
+            for (std::size_t i = 0; i < sheets.size(); ++i)
+                mappings.push_back({sheets[i].name(), "excel_" + std::to_string(file.id) + "_" + std::to_string(i + 1)});
+
+            std::lock_guard<std::mutex> guard(_mutex);
+            EXPECT_EQ(_imports.count(file.fileId), 0U);
+            _imports.emplace(file.fileId, ImportedFile{*file.fdfsFileId, sheets, mappings});
+            // 模拟下游已有写入，但调用方收到导入失败。
             if (fail_import)
                 throw Chat2DataException(ErrorCode::FILE_DEPENDENCY_FAILED);
-            return {{sheets[0].name(), "sheet_summary"}, {sheets[1].name(), "sheet_detail"}};
+            return mappings;
         }
 
         void DropTableExcel(const FileInfoEntity &file) override
         {
+            EXPECT_EQ(file.userId, kOwner);
             EXPECT_TRUE(file.fdfsFileId);
-            if (fail_drop)
-                throw Chat2DataException(ErrorCode::FILE_DEPENDENCY_FAILED);
-            ++drop_calls;
+            if (drop_error != ErrorCode::SUCCESS)
+                throw Chat2DataException(drop_error);
+
+            std::lock_guard<std::mutex> guard(_mutex);
+            const auto found = _imports.find(file.fileId);
+            if (found != _imports.end())
+            {
+                EXPECT_EQ(found->second.fdfs_id, *file.fdfsFileId);
+                _imports.erase(found);
+            }
         }
 
-        FilePreviewSheet PreviewImportedWorksheet(const FileInfoEntity &, const std::string &table, int page, int page_size) override
+        FilePreviewSheet PreviewImportedWorksheet(const FileInfoEntity &file, const std::string &table,
+                                                  int page, int page_size) override
         {
+            EXPECT_EQ(file.userId, kOwner);
+            EXPECT_EQ(file.status, kFileReady);
+            std::lock_guard<std::mutex> guard(_mutex);
+            const auto &import = _imports.at(file.fileId);
+            EXPECT_EQ(import.fdfs_id, *file.fdfsFileId);
+            const auto mapping = std::find_if(import.mappings.begin(), import.mappings.end(),
+                                              [&](const WorksheetMapping &sheet) { return sheet.table_name == table; });
+            if (mapping == import.mappings.end())
+                throw Chat2DataException(ErrorCode::FILE_DEPENDENCY_FAILED);
+
+            const auto &source = import.sheets[mapping - import.mappings.begin()];
             FilePreviewSheet sheet;
-            sheet.add_columns("金额");
-            if (table == "sheet_summary")
+            for (const auto &column : source.columns())
+                sheet.add_columns(column.name());
+            sheet.set_total_rows(source.rows_size());
+            const auto start = static_cast<std::int64_t>(page - 1) * page_size;
+            const auto end = std::min<std::int64_t>(start + page_size, source.rows_size());
+            for (auto i = start; i < end; ++i)
             {
-                sheet.set_total_rows(3);
-                const int start = (page - 1) * page_size;
-                for (int i = start; i < std::min(start + page_size, 3); ++i)
-                    sheet.add_data()->add_cells(std::to_string(i + 1));
+                auto *row = sheet.add_data();
+                for (const auto &cell : source.rows(static_cast<int>(i)).cells())
+                    row->add_cells(cell.value());
             }
             return sheet;
         }
 
-        bool HasSQLiteFileConnections(const FileInfoEntity &) override { return sqlite_in_use; }
+        bool HasSQLiteFileConnections(const FileInfoEntity &file) override
+        {
+            EXPECT_EQ(file.status, kFileDeleting);
+            EXPECT_EQ(file.fileExt, "db");
+            return sqlite_in_use;
+        }
 
         void UpdateSessionFile(const FileInfoEntity &file, const std::string &session) override
         {
             EXPECT_EQ(file.userId, kOwner);
-            sessions.insert(session);
+            EXPECT_EQ(file.status, kFileReady);
+            std::lock_guard<std::mutex> guard(_mutex);
+            _sessions[file.fileId].insert(session);
         }
 
-        void DeleteFileChatSessions(const FileInfoEntity &) override { sessions.clear(); }
+        void DeleteFileChatSessions(const FileInfoEntity &file) override
+        {
+            EXPECT_EQ(file.userId, kOwner);
+            EXPECT_EQ(file.status, kFileDeleting);
+            std::lock_guard<std::mutex> guard(_mutex);
+            _sessions.erase(file.fileId);
+        }
 
+        std::size_t SessionCount(const std::string &file_id)
+        {
+            std::lock_guard<std::mutex> guard(_mutex);
+            const auto found = _sessions.find(file_id);
+            return found == _sessions.end() ? 0 : found->second.size();
+        }
+
+        bool HasImportedFile(const std::string &file_id)
+        {
+            std::lock_guard<std::mutex> guard(_mutex);
+            return _imports.count(file_id) != 0;
+        }
+
+        // 测试在发请求前设置故障和同步点，所有在途请求结束后再修改。
+        std::function<void(const FileInfoEntity &)> before_import;
         bool fail_import = false;
-        bool fail_drop = false;
+        ErrorCode drop_error = ErrorCode::SUCCESS;
         bool sqlite_in_use = false;
-        int drop_calls = 0;
-        std::set<std::string> sessions;
+
+    private:
+        struct ImportedFile
+        {
+            std::string fdfs_id;
+            std::vector<WorksheetData> sheets;
+            std::vector<WorksheetMapping> mappings;
+        };
+
+        std::unique_ptr<FileDownstream> _parser;
+        std::mutex _mutex;
+        std::map<std::string, ImportedFile> _imports;
+        std::map<std::string, std::set<std::string>> _sessions;
     };
 
     template <typename Request>
@@ -195,11 +288,13 @@ namespace
                 [this](const std::string &bytes) -> std::optional<std::string>
                 {
                     auto id = "group1/M00/" + Utils::GenerateSecureId();
+                    std::lock_guard<std::mutex> guard(originals_mutex);
                     originals.emplace(id, bytes);
                     return id;
                 },
                 [this](const std::string &id, std::string &bytes)
                 {
+                    std::lock_guard<std::mutex> guard(originals_mutex);
                     const auto found = originals.find(id);
                     if (found == originals.end())
                         return false;
@@ -208,6 +303,7 @@ namespace
                 },
                 [this](const std::string &id)
                 {
+                    std::lock_guard<std::mutex> guard(originals_mutex);
                     originals.erase(id);
                     return true;
                 }};
@@ -244,6 +340,7 @@ namespace
         std::shared_ptr<odb::database> database;
         std::shared_ptr<sw::redis::Redis> redis;
         std::vector<std::string> file_ids;
+        std::mutex originals_mutex;
         std::map<std::string, std::string> originals;
         DownstreamStub *downstream = nullptr;
         std::unique_ptr<FileBusiness> business;
@@ -274,8 +371,11 @@ namespace
         // 缓存命中时仍校验文件归属和状态。
         const auto mappings = business->GetWorksheetDBTables(kOwner, id);
         ASSERT_EQ(mappings.size(), 2U);
-        EXPECT_EQ(mappings[0].table_name, "sheet_summary");
-        EXPECT_EQ(mappings[1].table_name, "sheet_detail");
+        const auto file_row = ReadRecord(id);
+        ASSERT_TRUE(file_row);
+        const auto table_prefix = "excel_" + std::to_string(file_row->id) + "_";
+        EXPECT_EQ(mappings[0].table_name, table_prefix + "1");
+        EXPECT_EQ(mappings[1].table_name, table_prefix + "2");
         EXPECT_GT(redis->pttl("file:" + id), 0);
         EXPECT_GT(redis->pttl("worksheet:" + id), 0);
         ExpectError(ErrorCode::FILE_UNAVAILABLE, [&]
@@ -291,9 +391,10 @@ namespace
         business->HandleFileChatSessionMap(kOwner, id, "chat-1");
         business->HandleFileChatSessionMap(kOwner, id, "chat-2");
         business->HandleFileChatSessionMap(kOwner, id, "chat-1");
-        EXPECT_EQ(downstream->sessions.size(), 2U);
+        EXPECT_EQ(downstream->SessionCount(id), 2U);
         business->DeleteFile(kOwner, id);
-        EXPECT_TRUE(downstream->sessions.empty());
+        EXPECT_EQ(downstream->SessionCount(id), 0U);
+        EXPECT_FALSE(downstream->HasImportedFile(id));
         EXPECT_TRUE(originals.empty());
         EXPECT_FALSE(ReadRecord(id));
         EXPECT_EQ(redis->exists("file:" + id), 0);
@@ -309,9 +410,10 @@ namespace
         const auto id = RegisterExcel();
         const auto registered_at = ReadRecord(id)->uploadTime;
         downstream->fail_import = true;
-        downstream->fail_drop = true;
-        ExpectError(ErrorCode::FILE_DEPENDENCY_FAILED, [&]
+        downstream->drop_error = ErrorCode::FILE_BUSY;
+        ExpectError(ErrorCode::FILE_BUSY, [&]
                     { business->UploadFile("first", kOwner, id, kWorkbook); });
+        EXPECT_TRUE(downstream->HasImportedFile(id));
         const auto failed = ReadRecord(id);
         ASSERT_TRUE(failed);
         EXPECT_EQ(failed->status, kFileUploading);
@@ -320,7 +422,7 @@ namespace
         ASSERT_EQ(originals.size(), 1U);
         EXPECT_TRUE(business->GetFileList(kOwner).empty());
 
-        downstream->fail_drop = false;
+        downstream->drop_error = ErrorCode::SUCCESS;
         // 附件大小有误时继续保留上一次的原件和上传中状态。
         ExpectError(ErrorCode::FILE_INVALID_INPUT, [&]
                     { business->UploadFile("wrong-size", kOwner, id, "short"); });
@@ -338,6 +440,7 @@ namespace
         EXPECT_EQ(pending->status, kFilePending);
         EXPECT_EQ(pending->uploadTime, registered_at);
         EXPECT_FALSE(pending->fdfsFileId);
+        EXPECT_FALSE(downstream->HasImportedFile(id));
         EXPECT_TRUE(originals.empty());
 
         downstream->fail_import = false;
@@ -372,6 +475,12 @@ namespace
         service.GetSQLiteFile(nullptr, &location, &located, nullptr);
         ASSERT_EQ(located.error_code(), 0);
         EXPECT_EQ(originals.at(located.result().fdfs_file_id()), bytes);
+        // SQLite 保存的是整个原件，文件记录下没有工作表映射。
+        {
+            FileData data(database, redis);
+            auto transaction = data.Begin();
+            EXPECT_TRUE(data.FindWorksheets(id).empty());
+        }
 
         DownloadFileRequest download;
         SetIdentity(download);
@@ -413,36 +522,63 @@ namespace
         business->UploadFile("upload", kOwner, id, kWorkbook);
         ASSERT_EQ(business->GetWorksheetDBTables(kOwner, id).size(), 2U);
 
-        downstream->fail_drop = true;
+        downstream->drop_error = ErrorCode::FILE_DEPENDENCY_FAILED;
         ExpectError(ErrorCode::FILE_DEPENDENCY_FAILED, [&]
                     { business->DeleteFile(kOwner, id); });
         ASSERT_EQ(ReadRecord(id)->status, kFileDeleting);
         EXPECT_EQ(redis->exists("file:" + id), 0);
         EXPECT_EQ(redis->exists("worksheet:" + id), 0);
         EXPECT_EQ(originals.size(), 1U);
-        downstream->fail_drop = false;
+        downstream->drop_error = ErrorCode::SUCCESS;
         business->DeleteFile(kOwner, id);
         EXPECT_FALSE(ReadRecord(id));
     }
 
-    // 分别校验登记过期回收和同一文件的并发上传限制。
-    TEST_F(FileServiceTest, ReclaimsExpiredRegistrationAndSerializesFileMutation)
+    // 待上传登记到期后，第二步上传会回收记录并要求重新登记。
+    TEST_F(FileServiceTest, ReclaimsExpiredRegistration)
     {
         const auto id = RegisterExcel();
         Execute(*database, "UPDATE tbl_fileInfo SET uploadTime = 0 WHERE fileId = '" + id + "'");
-        ExpectError(ErrorCode::FILE_UPLOAD_EXPIRED, [&]
-                    { business->UploadFile("expired", kOwner, id, kWorkbook); });
+        ExpectError(ErrorCode::FILE_UPLOAD_EXPIRED, [&] { business->UploadFile("expired", kOwner, id, kWorkbook); });
         EXPECT_FALSE(ReadRecord(id));
+    }
 
-        const auto active_id = RegisterExcel();
+    // 在真实的导入等待期间并发调用，覆盖命名锁及行锁各自的作用。
+    TEST_F(FileServiceTest, SerializesFileMutationsWhileImportIsInFlight)
+    {
+        const auto id = RegisterExcel();
+        const auto another = RegisterExcel();
+        std::promise<std::string> importing;
+        auto started = importing.get_future();
+        std::promise<void> resume;
+        const auto may_finish = resume.get_future();
+        downstream->before_import = [&](const FileInfoEntity &file)
         {
-            FileData other_instance(database, redis);
-            auto active_upload = other_instance.LockOperation(active_id);
-            ExpectError(ErrorCode::FILE_BUSY, [&]
-                        { business->UploadFile("busy", kOwner, active_id, kWorkbook); });
-        }
-        business->UploadFile("upload", kOwner, active_id, kWorkbook);
-        EXPECT_EQ(ReadRecord(active_id)->status, kFileReady);
+            if (file.fileId != id)
+                return;
+            importing.set_value(*file.fdfsFileId);
+            if (may_finish.wait_for(std::chrono::seconds(5)) != std::future_status::ready)
+                throw Chat2DataException(ErrorCode::FILE_DEPENDENCY_FAILED);
+        };
+
+        auto upload = std::async(std::launch::async, [&] { business->UploadFile("first", kOwner, id, kWorkbook); });
+        ASSERT_EQ(started.wait_for(std::chrono::seconds(3)), std::future_status::ready);
+        const auto uploading = ReadRecord(id);
+        ASSERT_TRUE(uploading);
+        ASSERT_TRUE(uploading->fdfsFileId);
+        EXPECT_EQ(*uploading->fdfsFileId, started.get());
+        EXPECT_EQ(uploading->status, kFileUploading);
+        // 导入期间文件行可查询，同一个文件的写操作仍被命名锁拦住。
+        ExpectError(ErrorCode::FILE_BUSY, [&] { business->UploadFile("duplicate", kOwner, id, kWorkbook); });
+        ExpectError(ErrorCode::FILE_BUSY, [&] { business->DeleteFile(kOwner, id); });
+        ExpectError(ErrorCode::FILE_UNAVAILABLE, [&] { business->GetFileInfo(kOwner, id); });
+        business->UploadFile("another", kOwner, another, kWorkbook);
+        EXPECT_EQ(business->GetFileList(kOwner).size(), 1U);
+
+        resume.set_value();
+        upload.get();
+        EXPECT_EQ(business->GetFileList(kOwner).size(), 2U);
+        EXPECT_TRUE(downstream->HasImportedFile(id));
     }
 
     // 第二次缓存清理失败时，MySQL 回滚文件记录和级联映射的删除。
@@ -513,8 +649,8 @@ namespace
         EXPECT_FALSE(ReadRecord(id));
     }
 
-    // 使用开发环境的 FastDFS 和真实解析 RPC，验证原件传输及重复清理。
-    TEST(FileDependenciesTest, ParsesRealWorkbookFromFastDfs)
+    // 使用真实 FastDFS 和解析 RPC，将工作簿交给注入的存储和 AI 替身处理。
+    TEST_F(FileServiceTest, UploadsRealWorkbookWithInjectedStorageAndAi)
     {
         using Breezefdfs::FDFSClient;
         Breezefdfs::fdfs_settings settings;
@@ -528,15 +664,23 @@ namespace
         std::ifstream workbook(FILE_WORKBOOK, std::ios::binary);
         ASSERT_TRUE(workbook.good());
         const std::string bytes((std::istreambuf_iterator<char>(workbook)), std::istreambuf_iterator<char>());
-        const auto storage = MakeFastDfsStorage();
-        const auto remote = storage.upload(bytes);
-        ASSERT_TRUE(remote);
+        auto storage = MakeFastDfsStorage();
+        // 记录本次创建的原件 ID，让断言失败时也能清理 FastDFS 数据。
         struct OriginalGuard
         {
-            const FileStorage &storage;
-            const std::string &remote;
-            ~OriginalGuard() { storage.remove(remote); }
-        } original{storage, *remote};
+            std::function<bool(const std::string &)> remove;
+            std::optional<std::string> remote;
+            ~OriginalGuard()
+            {
+                if (remote)
+                    remove(*remote);
+            }
+        } original{storage.remove, std::nullopt};
+        storage.upload = [upload = storage.upload, &original](const std::string &content)
+        {
+            original.remote = upload(content);
+            return original.remote;
+        };
 
         chat2data::ExcelParserServiceImpl parser(chat2data::ExcelParserBusiness(FDFSClient::download_to_file));
         brpc::Server server;
@@ -546,15 +690,30 @@ namespace
         channels->setWatch("excelService");
         channels->addNode("excelService", "127.0.0.1:" + std::to_string(server.listen_address().port));
 
-        auto dependency = MakeFileDownstream(channels, "excelService");
-        const auto sheets = dependency->ParseWorkbook("parse-test", *remote);
-        ASSERT_GT(sheets.size(), 1U);
-        EXPECT_GT(sheets[0].rows_size(), 0);
-        std::string downloaded;
-        EXPECT_TRUE(storage.download(*remote, downloaded));
-        EXPECT_EQ(downloaded, bytes);
-        EXPECT_TRUE(storage.remove(*remote));
-        EXPECT_TRUE(storage.remove(*remote));
+        auto dependency = std::make_unique<DownstreamStub>(MakeFileDownstream(channels, "excelService"));
+        auto *services = dependency.get();
+        FileBusiness file_service(FileData(database, redis), storage, std::move(dependency));
+        auto info = WorkbookInfo("原始工作簿.xlsx");
+        info.set_file_size(bytes.size());
+        const auto id = file_service.UploadFileInfo(kOwner, info);
+        file_ids.push_back(id);
+        file_service.UploadFile("parse-test", kOwner, id, bytes);
+        ASSERT_TRUE(original.remote);
+
+        const auto preview = file_service.PreviewExcel(kOwner, id, "", 1, 50);
+        ASSERT_GT(preview.excel_data().sheets_size(), 1);
+        EXPECT_GT(preview.excel_data().sheets(0).data_size(), 0);
+        EXPECT_TRUE(services->HasImportedFile(id));
+        EXPECT_EQ(file_service.DownloadFile(kOwner, id).second, bytes);
+        file_service.HandleFileChatSessionMap(kOwner, id, "real-workbook-session");
+        EXPECT_EQ(services->SessionCount(id), 1U);
+
+        file_service.DeleteFile(kOwner, id);
+        EXPECT_FALSE(ReadRecord(id));
+        EXPECT_FALSE(services->HasImportedFile(id));
+        EXPECT_EQ(services->SessionCount(id), 0U);
+        EXPECT_TRUE(storage.remove(*original.remote)); // Storage 返回原件已不存在时，重复清理可成功。
+        original.remote.reset();
         server.Stop(0);
         server.Join();
     }
